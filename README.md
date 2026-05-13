@@ -1,183 +1,237 @@
-# 目录比对汇总
+# MapleStory KMS → GMS 格式转换项目
 
-> 记录每次目录比对的结果，方便追踪变。
-
----
-
-## 目录结构
-
-| 目录名 | 说明 |
-|--------|------|
-| 1CMSXml | CMS国服原始版本 |
-| 2KMSXml | KMS韩服更新版本 |
-| 4C&GXml | 合并后的版本
-> 仅 achieve 目录已完成合并 |
+> 合并 CMS（国服）与 KMS（韩服）的游戏数据，转换为 GMS 格式
 
 ---
 
-## 比对记录
+## 项目结构
+
+```
+Maple2_KC_Convert_to_Gms/
+├── 1CMSXml/              # CMS 国服原始版本
+├── 2KMSXml/              # KMS 韩服更新版本
+├── 3GMSXml/              # GMS 参考格式
+├── 4C&GXml/               # 合并版本（CMS + KMS）
+├── 5NewGMS/               # 输出目录（GMS 格式）
+├── convert_cg_to_gms.py  # 主转换脚本
+└── README.md              # 本文档
+```
+
+---
+
+## 快速开始
+
+### 前置要求
+
+- Python 3.12+（Windows: `C:\Program Files\Python312\python.exe`）
+
+### 使用步骤
+
+1. **准备源数据**
+   - 确保 `4C&GXml` 目录包含已合并的 CMS + KMS 数据
+   - 确保 `3GMSXml` 目录包含 GMS 参考格式（用于 anikeytext.xml）
+
+2. **运行转换脚本**
+   ```bash
+   "C:\Program Files\Python312\python.exe" convert_cg_to_gms.py
+   ```
+
+3. **按提示操作**
+   ```
+   请输入源目录路径: K:\SynologyDrive\RedMxdserver\Maple2_KC_Convert_to_Gms\4C&GXml
+   
+   请选择要处理的目录:
+   1. achieve
+   2. camera
+   3. ui
+   4. ugcmap
+   5. anikeyinfo
+   6. 全部处理
+   ```
+
+4. **查看输出**
+   - 转换后的文件位于 `5NewGMS` 目录
+
+---
+
+## 目录转换状态
+
+| 目录 | 状态 | 处理方式 | 说明 |
+|------|------|----------|------|
+| **achieve** | ✅ 已完成 | 格式转换 | 添加 locking/target 属性，调整属性顺序 |
+| **camera** | ✅ 已完成 | 直接复制 | 三版内容完全一致 |
+| **ui** | ✅ 已完成 | 直接复制 | 三版内容完全一致 |
+| **ugcmap** | ✅ 已完成 | 直接复制 | 使用 KMS 最低价格规格 |
+| **anikeyinfo** | ✅ 已完成 | 增量更新 | 合并为 anikeytext.xml（GMS 单文件格式） |
+| additional | ✅ 已合并 | 直接复制 | KMS 新增领袖技能配置 |
+| additionaleffect | ⏸️ 暂不处理 | - | 尚未分析运作方式 |
+| anikeytext.xml | ✅ 已生成 | 从 anikeyinfo 合并 | 2306 个 kfm 条目 |
+
+---
+
+## 转换规则详解
 
 ### 1. achieve（成就目录）
 
-**比对时间**: 2026-05-11 10:27
-
-**统计**: 
-- 1CMSXml: 2101 个文件
-- 2KMSXml: 2116 个文件
-- 新增: 15 个
-- 大小不同: 17 个
-
-**新增文件（15个）**:
-
-| 文件 | 说明 |
-|------|------|
-| 21300118.xml | Zakum01 BOSS成就，statPoint 5点 |
-| 22300151.xml | 冒险任务成就 |
-| 23100449.xml | 技能熟练度成就 (code=90000834) |
-| 23200044.xml | 消费金币成就（整体被注释） |
-| 23300071.xml | 收集装备成就，statPoint 1点 |
-| 23300072.xml | 收集道具成就 |
-| 92000158~92000164.xml | Event猜拳活动成就，称号奖励 |
-| 92000165.xml | 技能熟练度成就 |
-| 93000010.xml | 消费金币成就（整体被注释） |
-
-**奖励移除/注释（需恢复）**:
-
-| 文件 | 原CMS奖励 | KMS移除内容 |
-|------|----------|-------------|
-| 22200452.xml | statPoint 1点 | 整条奖励删除 |
-| 22200454.xml | skillPoint 1点 | 整条奖励删除 |
-| 22200456.xml | skillPoint 1点 | 整条奖励删除 |
-| 23100112.xml | title 10000170 | 被注释掉 |
-| 23200044.xml | 全部内容 | 整体被注释 |
-| 93000010.xml | 全部内容+奖励 | 整体被注释 |
-
----
-
-### 2. 4C&GXml vs 3GMSXml（成就目录结构比对）
-
-**比对时间**: 2026-05-11 11:01
-
-**统计**:
-- 4C&GXml: 2116 个文件
-- 3GMSXml: 2207 个文件
-- 共有文件: 2081 个
-- 3GMSXml独有: 126 个
-- 4C&GXml独有: 35 个
-
-**结构差异**: 135 个文件
-
----
-
-#### Grade数量差异（129个文件）
-
-| 模式 | 数量 | 说明 |
-|------|------|------|
-| 3GM grade 更多 | 120+ | 大多数文件3GM有更多grade阶段 |
-| 4CG grade 更多 | 少数 | 如23100112.xml多1个grade |
-
-**典型差异示例**:
-| 文件 | 4CG grade | 3GM grade | 差异 |
-|------|-----------|-----------|------|
-| 21210003.xml | 9 | 45 | -36 |
-| 21220032.xml | 5 | 25 | -20 |
-| 21300042~21300070.xml | 2 | 6 | -4 |
-| 23100112.xml | 10 | 9 | +1 |
-| 92000123.xml | 1 | 3 | -2 |
-
----
-
-#### StatPoint差异（6个文件）
-
-| 文件 | 哪边更多 | 说明 |
-|------|----------|------|
-| 21210001.xml | 4C&GXml | 4CG有statPoint奖励，3GM没有 |
-| 23100112.xml | 4C&GXml | 4CG有statPoint且多1个grade |
-| 22200246.xml | 3GM | 3GM有statPoint奖励，4CG没有 |
-| 22200303.xml | 3GM | 3GM有statPoint奖励，4CG没有 |
-| 22200453.xml | 3GM | 3GM有statPoint奖励，4CG没有 |
-| 22300017.xml | 3GM | 3GM有statPoint奖励，4CG没有 |
-
----
-
-#### 属性差异
-
-| 属性 | 4C&GXml | 3GMSXml |
-|------|---------|---------|
-| locking | 无 | 有（全部2081个文件都有locking=""） |
-| feature | 有 | 部分有 |
-| condition target | 无空值 | 有空值target="" |
-| reward rank | 无 | 有（3GM有空的reward带rank="1"） |
-| 空reward | 无 | 4844个（type="" code="0" value="0"） |
-
-**3GMSXml特有属性**:
+**格式转换规则**:
 ```xml
-<condition ... target="" />        <!-- 额外的空target属性 -->
-<reward type="" code="0" value="0" rank="1" />  <!-- 空奖励带rank -->
-<achieves ... locking="">          <!-- 额外的locking属性 -->
+<!-- 原始格式 (4C&G) -->
+<achieves id="..." feature="...">
+
+<!-- GMS 格式 -->
+<achieves id="..." account="" icon="" noticePercent="" locking="" categoryTag="" feature="" locale="">
 ```
 
+**转换步骤**:
+1. 添加 `locking=""` 属性
+2. 为每个 `<condition>` 添加 `target=""` 属性
+3. 为没有 reward 的 grade 添加空 reward
+4. 调整属性顺序为 GMS 标准格式
+5. 为 reward 添加 `rank="1"`（如果没有）
+
+### 2. anikeyinfo（动画关键帧）
+
+**GMS 格式说明**:
+- KMS 使用拆分格式：`anikeyinfo\*.xml`（每个动画一个文件）
+- GMS 使用单文件格式：`anikeytext.xml`
+
+**转换逻辑（增量更新）**:
+1. 检查 `5NewGMS\anikeytext.xml` 是否存在
+2. 如不存在，提示用户先放入原始 GMS 文件
+3. 如存在，读取 `4C&GXml\anikeyinfo\*.xml`
+4. 对每个文件执行：
+   - 如果 `<kfm name="filename">` 已存在 → 替换内容
+   - 如果 `<kfm name="filename">` 不存在 → 追加到 `</ms2ani>` 之前
+
+### 3. ugcmap（UGC 房屋配置）
+
+**合并策略**: 使用 KMS 最低价格规格
+- `contractPrice`: KMS 定价远低于 CMS
+- `extensionPrice`: KMS 续约价远低于 CMS
+
 ---
 
-#### 结论
+## 已完成合并记录
 
-**3GMSXml比4C&GXml多的内容**:
-- 126个独有文件
-- 更细化的grade阶段（更多小目标）
-- 空target、空reward属性
-- locking属性
+### achieve（成就目录）
 
-**4C&GXml比3GMSXml多的内容**:
-- 35个独有文件（新增的KMS成就）
-- 保留的statPoint奖励（部分）
-- 完整的grade结构（无空值填充）
+**统计**:
+- 1CMSXml: 2101 个文件
+- 2KMSXml: 2116 个文件
+- 4C&GXml: 2116 个文件
+- 新增: 15 个（KMS 新增成就）
+- 差异: 17 个（KMS 移除部分奖励）
+
+**新增文件**:
+| 文件 | 说明 |
+|------|------|
+| 21300118.xml | Zakum BOSS 成就 |
+| 22300151.xml | 冒险任务成就 |
+| 23100449.xml | 技能熟练度成就 |
+| 23300071/72.xml | 收集成就 |
+| 23200044.xml | 消费金币成就（已恢复注释） |
+| 92000158-164.xml | Event 猜拳活动成就 |
+| 93000010.xml | 消费金币成就（已恢复注释） |
+
+**恢复奖励**:
+- 22200452/54/56.xml: 恢复 statPoint/skillPoint 奖励
+- 23100112.xml: 恢复 title 奖励
 
 ---
 
+### additional（技能配置）
+
+**统计**:
+- 1CMSXml: 74 个文件
+- 2KMSXml: 75 个文件
+- 4C&GXml: 75 个文件
+
+**新增**: 1300.xml（领袖技能配置，55,478 bytes）
+
 ---
 
-## 3. 脚本与转换
+### additionaleffect（附加效果）
 
-**时间**: 2026-05-11 11:20
+**统计**:
+- 1CMSXml: 6070 个文件
+- 2KMSXml: 6071 个文件
+- 4C&GXml: 6071 个文件
+
+**新增**: 50011032.xml
+
+---
+
+### anikeyinfo（动画关键帧）
+
+**统计**:
+- 1CMSXml: 2305 个文件
+- 2KMSXml: 2306 个文件
+- 4C&GXml: 2306 个文件
+
+**新增**: 50620238_r_duckyball04.xml（UGC 小黄鸭坐骑）
+
+**差异**: male.xml、female.xml（KMS 新增舞蹈/表情动作）
+
+---
+
+### ugcmap（UGC 房屋）
+
+**统计**: 117 个文件
+
+**差异**: 25 个文件价格不同，使用 KMS 最低规格
+
+---
+
+## 脚本使用说明
 
 ### convert_cg_to_gms.py
 
-**脚本位置**: `K:\SynologyDrive\RedMxdserver\togms\convert_cg_to_gms.py`
+**主转换脚本**，支持以下目录处理：
 
-**功能**: 将4C&GXml的achieve文件转换为3GMSXml格式
+```python
+# 查看脚本帮助
+python convert_cg_to_gms.py --help
 
-**转换规则**:
-1. achieves标签添加 `locking=""` 属性
-2. condition标签添加 `target=""` 属性（如果没有）
-3. 为每个grade添加空reward（如果没有reward）
-4. 属性顺序调整为GMS格式: `id, account, icon, noticePercent, locking, categoryTag, feature, locale`
-5. 为没有rank的reward添加 `rank="1"`
-
-### 5GMSXml
-
-**输出目录**: `K:\SynologyDrive\RedMxdserver\togms\5GMSXml\achieve`
-
-**统计**:
-- 输入: 2116 个文件（来自4C&GXml）
-- 输出: 2116 个文件
-- 成功率: 100%
-
-**转换验证**:
-| 项目 | 状态 |
-|------|------|
-| 属性顺序 | ✅ |
-| noticePercent="1" | ✅ |
-| locking="" | ✅ |
-| target="" | ✅ |
-| rank="1" | ✅ |
-| 空reward添加 | ✅ |
-| ms2包装 | ✅ |
-
-**使用方法**:
-```bash
-python K:\SynologyDrive\RedMxdserver\togms\convert_cg_to_gms.py
+# 交互模式（推荐）
+python convert_cg_to_gms.py
 ```
+
+**支持的处理类型**:
+- `process_achieve_folder()` - 格式转换
+- `process_direct_copy()` - 直接复制（camera、ui、ugcmap）
+- `process_anikeyinfo_folder()` - 增量更新 anikeytext.xml
+
+**默认路径**:
+- 源目录: `K:\SynologyDrive\RedMxdserver\Maple2_KC_Convert_to_Gms\4C&GXml`
+- 输出目录: `K:\SynologyDrive\RedMxdserver\Maple2_KC_Convert_to_Gms\5NewGMS`
 
 ---
 
-<!-- 后续比对结果追加在此 -->
+## 注意事项
+
+1. **anikeytext.xml 需要手动准备**
+   - 第一次运行 anikeyinfo 转换前，需要在 `5NewGMS` 放入原始 GMS 的 `anikeytext.xml`
+   - 脚本会提示用户操作
+
+2. **additionaleffect 暂不处理**
+   - 该目录运作方式尚未分析完成
+   - 暂时直接复制，不做格式转换
+
+3. **备份建议**
+   - 运行转换前建议备份 `4C&GXml` 和 `5NewGMS` 目录
+   - 脚本会自动创建 `.bak` 备份文件
+
+---
+
+## 更新日志
+
+- **2026-05-13**: 集成 anikeyinfo 增量更新功能到主脚本
+- **2026-05-13**: 完成 ui、ugcmap 目录合并与转换
+- **2026-05-11**: 完成 achieve、additional、additionaleffect 目录合并
+- **2026-05-11**: 创建主转换脚本 convert_cg_to_gms.py
+
+---
+
+## 作者
+
+MxdServer - MapleStory KMS→GMS 格式转换工具

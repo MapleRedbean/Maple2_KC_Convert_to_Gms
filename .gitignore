@@ -362,3 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /Orion2-Repacker_3
+/1CMSXml
+/2KMSXml
+/3GMSXml
