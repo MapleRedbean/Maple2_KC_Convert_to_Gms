@@ -63,7 +63,11 @@ Maple2_KC_Convert_to_Gms/
 | **ui** | ✅ 已完成 | 直接复制 | 三版内容完全一致 |
 | **ugcmap** | ✅ 已完成 | 直接复制 | 使用 KMS 最低价格规格 |
 | **anikeyinfo** | ✅ 已完成 | 增量更新 | 合并为 anikeytext.xml（GMS 单文件格式） |
-| additional | ✅ 已合并 | 直接复制 | KMS 新增领袖技能配置 |
+| **anikeytext.xml** | ✅ 已生成 | 从 anikeyinfo 合并 | 2306 个 kfm 条目 |
+| **table** | ✅ 已完成 | 用户选择（cn/kr） | 转换时让用户选择 cn 或 kr，输出为 na/ |
+| **string** | ✅ 已完成 | 直接复制 | 使用 2KMSXml 版本 |
+| **trigger** | ✅ 已完成 | 直接复制 | 926个子目录，差异为非结构性（本地化/注释/内联） |
+| additional | ⏸️ 暂跳过 | - | 3GMS 无此目录，处理方式未知，待后续分析 |
 | additionaleffect | ⏸️ 暂不处理 | - | 尚未分析运作方式 |
 | anikeytext.xml | ✅ 已生成 | 从 anikeyinfo 合并 | 2306 个 kfm 条目 |
 
@@ -108,6 +112,19 @@ Maple2_KC_Convert_to_Gms/
 **合并策略**: 使用 KMS 最低价格规格
 - `contractPrice`: KMS 定价远低于 CMS
 - `extensionPrice`: KMS 续约价远低于 CMS
+
+### 4. table（表格数据）
+
+**目录结构**:
+- `cn/` - 国服（CMS）版本
+- `kr/` - 韩服（KMS）版本  
+- `default/` - 默认版本
+
+**转换逻辑（用户选择）**:
+1. 脚本提示用户选择使用 cn 或 kr
+2. 用户选择后，将对应文件夹复制到输出目录并重命名为 `na/`
+3. `default/` 直接复制
+4. 可选：同时复制 cn 和 kr（cn 作为 na，kr 作为 kr）
 
 ---
 
@@ -182,6 +199,32 @@ Maple2_KC_Convert_to_Gms/
 
 ---
 
+### trigger（触发器）
+
+**统计**:
+- 1CMSXml: 900 个子目录
+- 2KMSXml: 926 个子目录
+- 4C&GXml: 926 个子目录
+- 3GMSXml: 882 个子目录
+
+**2KMS 新增 26 个子目录**: 主要是 `61000023~35_me_item/` 和 `9090000~6/`
+
+**4C&G vs 3GMS 差异分析（159个子目录有差异）**:
+
+| 差异模式 | 数量 | 说明 |
+|----------|------|------|
+| korean_state_renamed | 57 | 韩文state名/空格微调，结构不变 |
+| comment_vs_tag | 38 | CG注释掉了transition，GMS激活了它 |
+| korean_text_removed | 23 | GMS移除了韩文注释 |
+| minor_diff | 21 | 空格/空行差异 |
+| structure_changed | 15 | GMS内联了dungeon_common的import（同义不同写法） |
+| file_count_diff | 3 | 文件数量不同 |
+| unknown | 5 | 待确认 |
+
+**结论**: 所有差异为非结构性差异，直接复制即可
+
+---
+
 ## 脚本使用说明
 
 ### convert_cg_to_gms.py
@@ -198,8 +241,9 @@ python convert_cg_to_gms.py
 
 **支持的处理类型**:
 - `process_achieve_folder()` - 格式转换
-- `process_direct_copy()` - 直接复制（camera、ui、ugcmap）
+- `process_direct_copy()` - 直接复制（camera、ui、ugcmap、trigger）
 - `process_anikeyinfo_folder()` - 增量更新 anikeytext.xml
+- `process_table_folder()` - 用户选择 cn/kr，输出为 na/
 
 **默认路径**:
 - 源目录: `K:\SynologyDrive\RedMxdserver\Maple2_KC_Convert_to_Gms\4C&GXml`
@@ -225,6 +269,9 @@ python convert_cg_to_gms.py
 
 ## 更新日志
 
+- **2026-05-14**: 完成 table 目录合并到 4C&GXml，集成到主脚本（用户选择 cn/kr）
+- **2026-05-14**: 完成 string 目录合并到 4C&GXml，添加到主脚本（直接复制）
+- **2026-05-14**: 完成 trigger 目录分析合并，添加到主脚本直接复制
 - **2026-05-13**: 集成 anikeyinfo 增量更新功能到主脚本
 - **2026-05-13**: 完成 ui、ugcmap 目录合并与转换
 - **2026-05-11**: 完成 achieve、additional、additionaleffect 目录合并
