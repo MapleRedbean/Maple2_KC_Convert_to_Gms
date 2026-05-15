@@ -305,6 +305,145 @@ def process_anikeyinfo_folder(source_dir, output_dir):
     print(f"\n更新完成! 替换: {replace_count}, 追加: {append_count}, 错误: {error_count}")
 
 # ============================================================
+# ============================================================
+# script 目录转换
+# ============================================================
+
+def _add_gms_script_attrs(elem):
+    """给 select/script/monologue 添加 feature locale 属性"""
+    if elem.tag in ('select', 'script', 'monologue'):
+        elem.set('feature', '')
+        elem.set('locale', '')
+    for child in elem:
+        if child.tag == 'content':
+            child.set('gotoFail', '')
+        _add_gms_script_attrs(child)
+
+
+def _convert_content_gotofail(elem):
+    """给所有 distractor 添加 gotoFail空属性"""
+    for child in elem:
+        if child.tag == 'distractor' and 'gotoFail' not in child.attrib:
+            child.set('gotoFail', '')
+        _convert_content_gotofail(child)
+
+
+def process_script_folder(cg_dir, out_dir):
+    """转换 script 目录：npc 和 quest 子目录"""
+    import os, xml.etree.ElementTree as ET
+    from collections import defaultdict
+
+    # script 数据在 2KMSXml（4C&GXml不含script目录）
+    kms_script = os.path.join(os.path.dirname(cg_dir.rstrip(os.sep)), '2KMSXml', 'script')
+    out_script = os.path.join(out_dir, 'script')
+
+    # ---- NPC 转换 ----
+    npc_src = os.path.join(kms_script, 'npc', 'npcscript_final.xml')
+    npc_out = os.path.join(out_script, 'npc')
+    os.makedirs(npc_out, exist_ok=True)
+
+    print(f'  转换 NPC 脚本: {npc_src}')
+    tree = ET.parse(npc_src)
+    root = tree.getroot()
+
+    npc_count = 0
+    for npc in root.findall('npc'):
+        npc_id = npc.get('id')
+        ms2 = ET.Element('ms2')
+        for child in list(npc):
+            npc.remove(child)
+            ms2.append(child)
+        _add_gms_script_attrs(ms2)
+        _convert_content_gotofail(ms2)
+
+        out_file = os.path.join(npc_out, f'{npc_id}.xml')
+        ET.indent(ms2, '\t')
+        ET.ElementTree(ms2).write(out_file, encoding='utf-8', xml_declaration=True)
+        npc_count += 1
+
+    print(f'    NPC: {npc_count} 个文件')
+
+    # ---- Quest 转换 ----
+    # 建立 GMS ID -> 文件名 精确映射
+    gms_ref = os.path.join(os.path.dirname(cg_dir), '3GMSXml', 'script', 'quest')
+    gms_id_map = {}
+    for gf in os.listdir(gms_ref):
+        gfpath = os.path.join(gms_ref, gf)
+        if gf.endswith('.xml') and os.path.isfile(gfpath):
+            try:
+                gt = ET.parse(gfpath)
+                for q in gt.getroot().findall('quest'):
+                    gms_id_map[int(q.get('id'))] = gf
+            except:
+                pass
+
+    def classify_quest(qid):
+        if qid in gms_id_map:
+            return gms_id_map[qid]
+        # KMS-only fallback by ID range
+        if 10001000 <= qid <= 19999999:
+            return 'questscript_epic.xml'
+        if 30000340 <= qid <= 39999999:
+            return 'questscript_eventcommon.xml'
+        if 40001000 <= qid <= 49999999:
+            return 'questscript_tutorial.xml'
+        if 60001000 <= qid <= 69999999:
+            return 'questscript_tutorial.xml'
+        if 73000000 <= qid <= 73999999:
+            return 'questscript_guild.xml'
+        if 80000001 <= qid <= 80009999:
+            return 'questscript_eventkr.xml'
+        if 80010000 <= qid <= 80019999:
+            return 'questscript_eventcn.xml'
+        if 80020001 <= qid <= 80029999:
+            return 'questscript_eventna.xml'
+        if 80030000 <= qid <= 80039999:
+            return 'questscript_eventjp.xml'
+        if 90000000 <= qid <= 90999999:
+            return 'questscript_guide.xml'
+        if 91000000 <= qid <= 91999999:
+            return 'questscript_famecontents.xml'
+        if 92000000 <= qid <= 92999999:
+            return 'questscript_famefield.xml'
+        if 93000000 <= qid <= 94999999:
+            return 'questscript_famemission.xml'
+        if 95000000 <= qid <= 95999999:
+            return 'questscript_item.xml'
+        return 'questscript_world.xml'
+
+    q_src = os.path.join(kms_script, 'quest', 'questscript_final.xml')
+    q_out = os.path.join(out_script, 'quest')
+    os.makedirs(q_out, exist_ok=True)
+
+    print(f'  转换 Quest 脚本: {q_src}')
+    qt = ET.parse(q_src)
+    qr = qt.getroot()
+
+    groups = defaultdict(list)
+    for quest in qr.findall('quest'):
+        qid = int(quest.get('id'))
+        fname = classify_quest(qid)
+        groups[fname].append(quest)
+
+    total_quests = 0
+    for fname in sorted(groups.keys()):
+        quests = groups[fname]
+        ms2 = ET.Element('ms2')
+        for q in quests:
+            q_copy = ET.fromstring(ET.tostring(q, encoding='unicode'))
+            _add_gms_script_attrs(q_copy)
+            _convert_content_gotofail(q_copy)
+            ms2.append(q_copy)
+
+        out_file = os.path.join(q_out, fname)
+        ET.indent(ms2, '\t')
+        ET.ElementTree(ms2).write(out_file, encoding='utf-8', xml_declaration=True)
+        print(f'    {fname}: {len(quests)} quests')
+        total_quests += len(quests)
+
+    print(f'    Quest: {total_quests} 个任务写入 {len(groups)} 个文件')
+
+
 # skilldata 转换相关函数
 # ============================================================
 
@@ -692,7 +831,7 @@ def main():
     for i, folder in enumerate(subfolders, 1):
         print(f"  {i}. {folder}")
 
-    print("\n支持的文件夹: achieve, camera, ui, ugcmap, anikeyinfo, trigger, table, string, skilldata")
+    print("\n支持的文件夹: achieve, camera, ui, ugcmap, anikeyinfo, trigger, table, string, skilldata, script")
 
     if 'anikeyinfo' in subfolders:
         print("\n注意: 处理 anikeyinfo 需要输出目录已有原始 anikeytext.xml")
@@ -705,7 +844,7 @@ def main():
 
     choice = input("\n请选择要处理的文件夹编号 (多个用逗号分隔，直接回车选择全部): ").strip()
 
-    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata']
+    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script']
 
     if not choice:
         selected = [f for f in subfolders if f in supported]
@@ -736,7 +875,8 @@ def main():
     print("  achieve: 格式转换（locking、target 属性）")
     print("  camera/ui/ugcmap/trigger/string: 直接复制")
     print("  anikeyinfo: 增量更新 anikeytext.xml")
-    print("  skilldata: KMS多技能文件 → GMS单技能文件")
+    print("  skilldata: KMS多技能文件 -> GMS单技能文件")
+    print("  script: NPC/Quest大文件 -> GMS分类文件")
 
     confirm = input("\n确认开始转换? (y/n): ").strip().lower()
     if confirm != 'y':
@@ -766,6 +906,8 @@ def main():
             process_direct_copy(source_dir, output_dir, 'string')
         elif folder == 'skilldata':
             process_skilldata_folder(source_dir, output_dir)
+        elif folder == 'script':
+            process_script_folder(source_dir, output_dir)
         else:
             print(f"未支持的文件夹: {folder}")
 

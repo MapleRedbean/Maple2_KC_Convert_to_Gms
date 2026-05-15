@@ -33,6 +33,7 @@ Maple2_KC_Convert_to_Gms/
 | table | ✅ 完成 | 结构合并 | cn/kr 保留，转换映射为 na/ |
 | string | ✅ 完成 | 直接复制 | 1093个文件 |
 | skilldata | ✅ 完成 | KMS→GMS 结构转换 | 9451技能，9个解析错误 |
+| script | ✅ 完成 | NPC/Quest 大文件→分类文件 | NPC 3268个，Quest 4388个/14文件 |
 | additional | ⏸️ 跳过 | - | GMS 无此目录 |
 | additionaleffect | ⏸️ 待分析 | - | 6034共同文件全部大小不同 |
 
@@ -158,6 +159,37 @@ GMS 有 1954 个 KMS 没有的技能，其中 1393 个在共同子目录中，27
 4C&G 有 6071 个文件，GMS 有 6090 个，6034 个共同文件**全部大小不同**。
 差异性质未确认（可能是格式差异也可能是数值差异），需抽样对比。
 
+### script 转换详情
+
+**NPC 转换**：
+- 源：KMS `npcscript_final.xml`（2.3MB，3268个NPC）
+- 输出：GMS `npc/*.xml`（3268个独立文件）
+- 处理：`<npc id="X">` → `<ms2>`，`<select/script/monologue>` 添加 `feature="" locale=""`，`<distractor>` 添加 `gotoFail=""`
+
+**Quest 转换**：
+- 源：KMS `questscript_final.xml`（4.3MB，4388个任务）
+- 输出：GMS `quest/*.xml`（14个分类文件）
+- 分类依据：GMS ID精确映射 + KMS-only ID按区间Fallback
+
+| 输出文件 | Quest数 | 说明 |
+|----------|---------|------|
+| questscript_epic.xml | 1417 | 主线/剧情 |
+| questscript_eventkr.xml | 561 | 韩服活动 |
+| questscript_eventcn.xml | 196 | 国服活动 |
+| questscript_eventjp.xml | 69 | 日服活动 |
+| questscript_eventna.xml | 85 | 国际服活动 |
+| questscript_eventcommon.xml | 38 | 通用活动 |
+| questscript_world.xml | 873 | 世界/其他（含9701xxxx KMS独有100个）|
+| questscript_famemission.xml | 607 | 声望任务 |
+| questscript_famecontents.xml | 168 | 声望内容 |
+| questscript_guide.xml | 164 | 引导 |
+| questscript_famefield.xml | 106 | 声望地图 |
+| questscript_guild.xml | 60 | 公会 |
+| questscript_tutorial.xml | 33 | 教程 |
+| questscript_item.xml | 11 | 物品相关 |
+
+**KMS独有Quest**：178个任务在GMS中不存在，全部写入world.xml。其中100个在9701xxxx区间（韩服独有内容）。
+
 ---
 
 ## 使用说明
@@ -182,7 +214,7 @@ skilldata 直接从 2KMSXml/skilldata 读取。
 
 ## 更新日志
 
-- **2026-05-15**: 修复 skilldata 4个格式Bug（collision/rangeOffset/cooldownTime），全量转换9451技能，清理临时文件
+- **2026-05-15**: 完成 script 目录转换（NPC 3268个 + Quest 4388个/14文件），修复 skilldata 4个格式Bug
 - **2026-05-14**: 完成 skilldata 核心转换逻辑，完成 table/string 集成
 - **2026-05-13**: 集成 anikeyinfo 增量更新，分析 skilldata 结构差异
 - **2026-05-11**: 创建项目基础结构，完成 achieve/camera/ui/ugcmap/trigger
