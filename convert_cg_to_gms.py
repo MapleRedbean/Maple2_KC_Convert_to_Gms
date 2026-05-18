@@ -8,6 +8,7 @@ Converts 4C&GXml achieve files to 3GMSXml format
 import os
 import re
 import copy
+import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -914,9 +915,9 @@ def main():
         elif folder == 'script':
             process_script_folder(source_dir, output_dir)
         elif folder == 'riding':
-            print('[!] riding 暂未实现')
+            process_riding_folder(source_dir, output_dir)
         elif folder == 'quest':
-            print('[!] quest 暂未实现')
+            process_quest_folder(source_dir, output_dir)
         elif folder == 'pet':
             process_direct_copy(source_dir, output_dir, 'pet')
         elif folder == 'object':
@@ -1170,6 +1171,315 @@ def process_npcdata_folder(source_dir, output_dir):
     print()
     print(f'\n转换完成! 文件: {total}, NPC: {total_npcs}')
     print(f'成功: {total_npcs - len(errors)}, 错误: {len(errors)}')
+
+#======================================================================
+# riding 转换相关
+#======================================================================
+
+# GMS <riding>/<basic> 独有属性默认值（KMS 缺失的属性）
+_RIDING_BASIC_DEFAULTS = {
+    'hideRider': 'false', 'battleLife': 'true', 'enableRideOffUI': 'false',
+    'useRidingUI': 'false', 'skillSetID': '0', 'rideBone2': '',
+    'rideTranslation2': '0,0,0', 'rideRotation2': '0,0,0',
+    'walkSpeed': '1', 'swimSpeed': '0', 'enableSwim': '0',
+    'rideAniPC2': '', 'rideAniPC_Idle': '', 'rideAniPC_Run': '',
+    'rideAniPC_Jump': '', 'rideAniPC_SP_Idle': '', 'rideAniPC_SP_Run': '',
+    'rideAniPC_SP_Jump': '', 'fallDamageDown': '0',
+    'pressXEffectIdle': '', 'releaseXEffectIdle': '',
+    'pressXEffectRun': '', 'releaseXEffectRun': '',
+    'pressXEffectIdleNonstop': '', 'pressXEffectRunNonstop': '',
+    'loopEffect': '', 'nameTagOffsetY': '',
+}
+
+# GMS 独有子节点默认值（按 GMS 顺序排列）
+_RIDING_NODE_DEFAULTS_ORDER = ['collision', 'capsule', 'shadow', 'faceCamera', 'stat']
+_RIDING_NODE_DEFAULTS = {
+    'collision': {'shape': 'box', 'width': '100', 'height': '130', 'depth': '100'},
+    'capsule': {'radius': '25', 'height': '150'},
+    'shadow': {'bias': '1'},
+    'stat': {'str': '0', 'dex': '0', 'int': '0', 'luk': '0', 'hp': '0',
+             'hp_rgp': '0', 'hp_inv': '0', 'sp': '0', 'sp_rgp': '0', 'sp_inv': '0',
+             'ep': '0', 'ep_rgp': '0', 'ep_inv': '0', 'asp': '0', 'msp': '0',
+             'atp': '0', 'evp': '0', 'cap': '0', 'cad': '0', 'car': '0',
+             'ndd': '0', 'abp': '0', 'jmp': '0', 'pap': '0', 'map': '0',
+             'par': '0', 'mar': '0', 'wapmin': '0', 'wapmax': '0',
+             'pen': '0', 'rmsp': '0', 'bap': '0'},
+}
+
+# GMS ridepassenger 默认属性（含 GMS 独有）
+_RIDING_PASSENGER_DEFAULTS = {
+    'rideTranslation': '0,0,0', 'rideRotation': '0,0,0',
+    'rideTranslation2': '0,0,0', 'rideAniPC': 'Ride_Idle_A', 'rideAniPC2': '',
+    'rideAniPC_Idle': '', 'rideAniPC_Run': '', 'rideAniPC_Jump': '',
+    'rideAniPC_SP_Idle': '', 'rideAniPC_SP_Run': '', 'rideAniPC_SP_Jump': '',
+    'nameTagOffsetY': '',
+}
+
+
+def _transform_riding_basic(kms_basic):
+    """将 KMS <basic> 转换为 GMS <basic>，补全 GMS 独有属性"""
+    new_basic = ET.Element('basic')
+    for k, v in kms_basic.attrib.items():
+        new_basic.set(k, v)
+    for k, default in _RIDING_BASIC_DEFAULTS.items():
+        if k not in new_basic.attrib:
+            new_basic.set(k, default)
+    # rideAniPC2 默认复制 rideAniPC
+    if not new_basic.get('rideAniPC2') and new_basic.get('rideAniPC'):
+        new_basic.set('rideAniPC2', new_basic.get('rideAniPC'))
+    return new_basic
+
+
+def process_riding_folder(source_dir, output_dir):
+    """转换 riding 目录：主文件属性补全 + passenger 拆分为独立文件"""
+    riding_dir = os.path.join(source_dir, 'riding')
+    if not os.path.isdir(riding_dir):
+        print('riding 目录不存在')
+        return
+
+    out_riding = os.path.join(output_dir, 'riding')
+    out_passenger = os.path.join(out_riding, 'passenger')
+    out_effectdummy = os.path.join(out_riding, 'effectdummy')
+
+    files = [f for f in os.listdir(riding_dir) if f.endswith('.xml')]
+    total = len(files)
+    count = 0
+    passenger_count = 0
+    errors = []
+
+    # 1. 处理 effectdummy 子目录（直接复制）
+    kms_ed = os.path.join(riding_dir, 'effectdummy')
+    if os.path.isdir(kms_ed):
+        if os.path.exists(out_effectdummy):
+            shutil.rmtree(out_effectdummy)
+        shutil.copytree(kms_ed, out_effectdummy)
+        print('effectdummy: 复制完成')
+
+    # 2. 处理主 riding 文件
+    for f in files:
+        src = os.path.join(riding_dir, f)
+        if not os.path.isfile(src):
+            continue
+        try:
+            tree = ET.parse(src)
+        except Exception as e:
+            errors.append(f'{f}: {e}')
+            continue
+
+        root = tree.getroot()
+        riding = root.find('riding')
+        if riding is None:
+            shutil.copy2(src, os.path.join(out_riding, f))
+            continue
+
+        # 转换 <basic>
+        kms_basic = riding.find('basic')
+        if kms_basic is not None:
+            new_basic = _transform_riding_basic(kms_basic)
+            riding.remove(kms_basic)
+
+        # 重建子节点，按 GMS 顺序排列
+        existing_children = list(riding)
+        for child in existing_children:
+            riding.remove(child)
+        # basic 必须是第一个子节点
+        if kms_basic is not None:
+            riding.append(new_basic)
+        for tag in _RIDING_NODE_DEFAULTS_ORDER:
+            defaults = _RIDING_NODE_DEFAULTS.get(tag, {})
+            # 从已有子节点中找
+            node = None
+            for child in existing_children:
+                if child.tag == tag:
+                    node = child
+                    break
+            if node is None:
+                node = ET.Element(tag)
+            for k, default in defaults.items():
+                if k not in node.attrib:
+                    node.set(k, default)
+            riding.append(node)
+        # 添加非标准顺序的剩余子节点
+        for child in existing_children:
+            if child.tag not in _RIDING_NODE_DEFAULTS_ORDER:
+                riding.append(child)
+
+        # 提取 passenger 数据并拆分为独立文件
+        passengers = riding.find('passengers')
+        passenger_single = riding.find('passenger')
+        passenger_list = []
+
+        if passengers is not None:
+            for p in passengers.findall('passenger'):
+                passenger_list.append(p)
+            riding.remove(passengers)
+
+        if passenger_single is not None:
+            riding.remove(passenger_single)
+
+        # 写入 passenger 独立文件
+        for p in passenger_list:
+            ride_id = kms_basic.get('id', '') if kms_basic is not None else ''
+            rp_root = ET.Element('ms2')
+            rp = ET.SubElement(rp_root, 'ridepassenger')
+            rp.set('id', ride_id)
+            for k, v in p.attrib.items():
+                rp.set(k, v)
+            for k, default in _RIDING_PASSENGER_DEFAULTS.items():
+                if k not in rp.attrib:
+                    rp.set(k, default)
+            rp_tree = ET.ElementTree(rp_root)
+            ET.indent(rp_tree)
+            os.makedirs(out_passenger, exist_ok=True)
+            rp_path = os.path.join(out_passenger, f'{ride_id}.xml')
+            rp_tree.write(rp_path, encoding='utf-8', xml_declaration=True)
+            passenger_count += 1
+
+        # 写入主文件
+        new_tree = ET.ElementTree(root)
+        ET.indent(new_tree)
+        out_path = os.path.join(out_riding, f)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        new_tree.write(out_path, encoding='utf-8', xml_declaration=True)
+        count += 1
+
+        if count % 50 == 0:
+            pct = count * 100 // total
+            print(f'\r进度: {count}/{total} ({pct}%)', end='', flush=True)
+
+    print(f'\nriding 转换完成! 文件: {count}, passenger: {passenger_count}')
+    if errors:
+        print(f'错误: {len(errors)}')
+        for e in errors[:5]:
+            print(f'  {e}')
+
+
+#======================================================================
+# quest 转换相关
+#======================================================================
+
+# GMS <basic> 独有属性默认值
+_QUEST_BASIC_DEFAULTS = {
+    'questType': '0', 'account': '0', 'autoStart': '0',
+    'disableGiveup': '0', 'exceptChapterClear': '0', 'repeatable': '0',
+    'usePeriod': '', 'eventTag': '', 'tabIndex': '-1', 'forceRegistGuide': '0',
+}
+
+# GMS 独有子节点模板
+_QUEST_GMS_NODES = {
+    'notify': {'completeUiEffect': '', 'acceptSoundKey': '', 'completeSoundKey': ''},
+    'require': {'maxLevel': '0', 'quest': '', 'selectableQuest': '', 'unrequire': '',
+               'field': '', 'achievement': '0', 'unreqAchievement': '', 'groupID': '0',
+               'dayOfWeek': '', 'gearScore': '0'},
+    'acceptReward': {},
+    'completeReward': {'karma': '0', 'lu': '0'},
+    'progressMap': {'progressMap': ''},
+    'guide': {'guideType': '', 'guideIcon': '', 'guideMinLevel': '0', 'guideMaxLevel': '0'},
+    'gotoNpc': {'enable': '0', 'gotoField': '0', 'gotoPortal': '0'},
+    'gotoDungeon': {'state': '0', 'gotoDungeon': '0', 'gotoInstanceID': '0'},
+    'remoteAccept': {'useRemote': '0', 'requireField': '0'},
+    'remoteComplete': {'useRemote': '0', 'requireField': '0', 'requireDungeonClear': '0'},
+    'summonPortal': {'fieldID': '0', 'portalID': '0'},
+    'eventMission': {'event': ''},
+}
+
+# GMS 独有子节点的插入顺序
+_QUEST_GMS_NODE_ORDER = [
+    'notify', 'acceptReward', 'progressMap', 'guide',
+    'gotoNpc', 'gotoDungeon', 'remoteAccept', 'remoteComplete',
+    'summonPortal', 'eventMission',
+]
+
+
+def process_quest_folder(source_dir, output_dir):
+    """转换 quest 目录：补全 GMS 独有节点和属性"""
+    quest_dir = os.path.join(source_dir, 'quest')
+    if not os.path.isdir(quest_dir):
+        print('quest 目录不存在')
+        return
+
+    out_quest = os.path.join(output_dir, 'quest')
+    files = [f for f in os.listdir(quest_dir) if f.endswith('.xml')]
+    total = len(files)
+    count = 0
+    errors = []
+
+    for f in files:
+        src = os.path.join(quest_dir, f)
+        try:
+            tree = ET.parse(src)
+        except Exception as e:
+            errors.append(f'{f}: {e}')
+            continue
+
+        root = tree.getroot()
+        env = root.find('environment')
+        if env is None:
+            shutil.copy2(src, os.path.join(out_quest, f))
+            continue
+
+        # 添加 locale="" 到 environment
+        if 'locale' not in env.attrib:
+            env.set('locale', '')
+
+        quest = env.find('quest')
+        if quest is None:
+            shutil.copy2(src, os.path.join(out_quest, f))
+            continue
+
+        # 1. 补全 <basic> GMS 独有属性
+        basic = quest.find('basic')
+        if basic is not None:
+            for k, default in _QUEST_BASIC_DEFAULTS.items():
+                if k not in basic.attrib:
+                    basic.set(k, default)
+
+        # 2. 补全 <require> GMS 独有属性
+        require = quest.find('require')
+        if require is not None:
+            for k, default in _QUEST_GMS_NODES['require'].items():
+                if k not in require.attrib:
+                    require.set(k, default)
+
+        # 3. 补全 <completeReward> GMS 独有属性
+        cr = quest.find('completeReward')
+        if cr is not None:
+            for k, default in _QUEST_GMS_NODES['completeReward'].items():
+                if k not in cr.attrib:
+                    cr.set(k, default)
+
+        # 4. 插入 GMS 独有子节点
+        for tag in _QUEST_GMS_NODE_ORDER:
+            if tag == 'require':
+                continue
+            if quest.find(tag) is not None:
+                node = quest.find(tag)
+                for k, default in _QUEST_GMS_NODES[tag].items():
+                    if k not in node.attrib:
+                        node.set(k, default)
+            else:
+                new_node = ET.SubElement(quest, tag)
+                for k, default in _QUEST_GMS_NODES[tag].items():
+                    new_node.set(k, default)
+
+        # 写入
+        new_tree = ET.ElementTree(root)
+        ET.indent(new_tree)
+        out_path = os.path.join(out_quest, f)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        new_tree.write(out_path, encoding='utf-8', xml_declaration=True)
+        count += 1
+
+        if count % 200 == 0:
+            pct = count * 100 // total
+            print(f'\r进度: {count}/{total} ({pct}%)', end='', flush=True)
+
+    print(f'\nquest 转换完成! 文件: {count}/{total}')
+    if errors:
+        print(f'错误: {len(errors)}')
+        for e in errors[:5]:
+            print(f'  {e}')
+
 
 if __name__ == '__main__':
     main()
