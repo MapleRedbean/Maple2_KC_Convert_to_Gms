@@ -831,7 +831,7 @@ def main():
     for i, folder in enumerate(subfolders, 1):
         print(f"  {i}. {folder}")
 
-    print("\n支持的文件夹: achieve, camera, ui, ugcmap, anikeyinfo, trigger, table, string, skilldata, script")
+    print("\n支持的文件夹: achieve, camera, ui, ugcmap, anikeyinfo, trigger, table, string, skilldata, script, riding, quest, pet, object, npcdata")
 
     if 'anikeyinfo' in subfolders:
         print("\n注意: 处理 anikeyinfo 需要输出目录已有原始 anikeytext.xml")
@@ -844,7 +844,7 @@ def main():
 
     choice = input("\n请选择要处理的文件夹编号 (多个用逗号分隔，直接回车选择全部): ").strip()
 
-    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script']
+    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'npcdata']
 
     if not choice:
         selected = [f for f in subfolders if f in supported]
@@ -877,6 +877,11 @@ def main():
     print("  anikeyinfo: 增量更新 anikeytext.xml")
     print("  skilldata: KMS多技能文件 -> GMS单技能文件")
     print("  script: NPC/Quest大文件 -> GMS分类文件")
+    print("  riding: 骑宠主文件+passenger拆分")
+    print("  quest: 补GMS独有节点和属性")
+    print("  pet: 直接复制")
+    print("  object: 直接复制")
+    print("  npcdata: KMS合集 -> GMS独立文件")
 
     confirm = input("\n确认开始转换? (y/n): ").strip().lower()
     if confirm != 'y':
@@ -908,12 +913,263 @@ def main():
             process_skilldata_folder(source_dir, output_dir)
         elif folder == 'script':
             process_script_folder(source_dir, output_dir)
+        elif folder == 'riding':
+            print('[!] riding 暂未实现')
+        elif folder == 'quest':
+            print('[!] quest 暂未实现')
+        elif folder == 'pet':
+            process_direct_copy(source_dir, output_dir, 'pet')
+        elif folder == 'object':
+            process_direct_copy(source_dir, output_dir, 'object')
+        elif folder == 'npcdata':
+            process_npcdata_folder(source_dir, output_dir)
         else:
             print(f"未支持的文件夹: {folder}")
 
     print(f"\n{'='*50}")
     print("全部处理完成!")
     print(f"{'='*50}")
+
+
+#======================================================================
+# npcdata 转换相关（2026-05-18 新增）
+#======================================================================
+
+# KMS <environment> 属性中不属于 GMS <basic> 的（feature/locale 是 environment 自身属性）
+_NPC_ENV_SKIP = {"feature", "locale"}
+
+# GMS <basic> 全部属性默认值
+_NPC_BASIC_DEFAULTS = {
+    'friendly': '2', 'npcAttackGroup': '2', 'npcDefenseGroup': '1',
+    'kind': '0', 'iconName': '', 'minimapIconName': '', 'shopId': '0',
+    'nametag': '1', 'nametagSize': '18', 'local': '0', 'minimap': '1',
+    'attackDamage': '0', 'hpBar': '0', 'defenceMaterial': '0',
+    'hitImmune': '1', 'abnormalImmune': '1', 'level': '1', 'class': '5',
+    'rankIcon': '', 'rotationDisabled': '0', 'carePathToEnemy': '1',
+    'npcSoundStart': '', 'npcSoundEnd': '', 'npcSoundCombatStart': '',
+    'npcSoundCombatEnd': '', 'npcSoundDead': '', 'maxSpawnCount': '0',
+    'groupSpawnCount': '0', 'rareDegree': '0', 'difficulty': '0',
+    'propertyTags': '', 'raceString': '', 'bossNotify': '0',
+    'gender': '0', 'illust': '', 'emotionID': '0', 'mainTags': '',
+    'subTags': '', 'portrait': '', 'talkAni': '1',  # Bug#5: 默认"1"非"0"
+    'damagedColorScale': '2', 'damagedVibrateDuration': '0',
+    'damagedVibrateAmp': '0', 'regenEffect': '', 'deadEffect': '',
+    'damageEffect': '', 'createEffect': '', 'keepEffect': '',
+    'skipFrame': '1', 'checkCameraDistance': '0',
+    'extraCameraDistance': '0', 'bossSoundDistance': '2000',
+    'bossSoundEndDistance': '3000',
+}
+
+# GMS <stat> 属性默认值
+_NPC_STAT_DEFAULTS = {
+    'str': '0', 'dex': '0', 'int': '0', 'luk': '0',
+    'hp': '0', 'hp_rgp': '0', 'hp_inv': '0',
+    'sp': '0', 'sp_rgp': '0', 'sp_inv': '0',
+    'ep': '0', 'ep_rgp': '0', 'ep_inv': '0',
+    'asp': '0', 'msp': '100', 'atp': '0', 'evp': '0',
+    'cap': '0', 'cad': '0', 'car': '0', 'ndd': '0',
+    'abp': '0', 'jmp': '0', 'pap': '0', 'map': '100',
+    'par': '0', 'mar': '0', 'wapmin': '0', 'wapmax': '0',
+    'dmg': '0', 'pen': '0', 'rmsp': '0', 'bap': '0', 'bap_pet': '0',
+}
+
+# KMS <stat> -> GMS 属性映射
+_NPC_KMS_STAT_MAP = {
+    'hp': 'hp', 'msp': 'msp', 'atp': 'atp', 'evp': 'evp',
+    'ndd': 'ndd', 'pap': 'pap', 'map': 'map',
+}
+
+# GMS 其他子节点默认值（Bug#1: model 不含 shadowScale/rotationSpeed/walkSpeed/runSpeed）
+_NPC_OTHER_DEFAULTS = {
+    'model': {'kfm': '', 'scale': '', 'anispeed': '1', 'anispeedfix': 'false', 'spawnAlphaAnimation': '0', 'offset': '0.000000, 0.000000, 0.000000'},
+    'speed': {'rotation': '190', 'walk': '120', 'run': '0'},
+    'distance': {'avoid': '0', 'sight': '0', 'sightHeightUP': '200', 'sightHeightDown': '50', 'customLastSightRadius': '0', 'customLastSightHeightUp': '0', 'customLastSightHeightDown': '0'},
+    'skill': {'ids': '', 'levels': '', 'priorities': '', 'probs': '', 'coolDown': '0'},
+    'additionalEffect': {'codes': '', 'levels': '', 'group': ''},
+    'interact': {'interactFunction': '', 'interactCastingAnimation': '', 'interactCastingTime': '0', 'interactCoolTime': '0', 'interactIsShowCastingBar': 'true'},
+    'combat': {'combatAbandonTick': '0', 'impossibleCombatAbandonTick': '0', 'ignoreExtendLifeTime': 'false', 'canShowHideTarget': 'false'},
+    'assist': {'assistType1SkillCount': '0', 'assistType2SkillCount': '0', 'assistType2CheckTick': '0'},
+    'aiInfo': {'path': ''},
+    'collision': {'shape': '', 'width': '0', 'height': '0', 'depth': '0', 'widthOffset': '0', 'depthOffset': '0', 'heightOffset': '0'},
+    'corpse': {'width': '0', 'height': '0', 'depth': '0', 'added': '0', 'offsetNametag': '0', 'corpseEffect': '', 'hitAble': '0', 'rotation': ''},
+    'capsule': {'radius': '0', 'height': '0', 'ignore': '0'},
+    'validBattleCylinder': {'radius': '0', 'height': '0'},
+    'dead': {'time': '0', 'defaultaction': '', 'upaction': '', 'revival': '0', 'count': '0', 'lifeTime': '0', 'slowLastHit': '0', 'extendRoomTime': '0'},
+    'push': {'back': '0', 'up': '0', 'knockback': '0'},
+    'exp': {'customExp': '-1'},
+    'shadow': {'scale': '250', 'bias': '1'},
+    'normal': {'action': 'Idle_A', 'prob': '10000', 'movearea': '50', 'maidExpired': 'Idle_A'},
+    'dropiteminfo': {'dropHeight': '0', 'dropDistanceBase': '50', 'dropDistanceRandom': '100', 'fireVelocity': '100', 'globalDropBoxId': '', 'globalDeadDropBoxId': '', 'individualDropBoxId': '', 'globalHitDropBoxId': '', 'individualHitDropBoxId': ''},
+    'lookattarget': {'targetdummy': '', 'lookAtMyPCWhenTalking': '0', 'useTalkMotion': '1'},
+}
+
+def _create_gms_environment(kms_npc):
+    """从 KMS <npc> 创建 GMS <environment> 节点
+    GMS 子节点顺序: model -> basic -> stat -> speed -> ... -> crystals
+    effectdummy 在 environment 外部，与 environment 同级
+    """
+    env = kms_npc.find('environment')
+    if env is None:
+        return None, None
+
+    new_env = ET.Element('environment')
+    new_env.set('feature', env.get('feature', ''))
+    new_env.set('locale', '')
+
+    # 先读取 KMS <model>，需要其属性映射到 <speed> 和 <shadow>
+    kms_model = env.find('model')
+    _KMS_MODEL_SKIP = {'shadowScale', 'rotationSpeed', 'walkSpeed', 'runSpeed'}
+
+    # --- GMS 子节点顺序: model, basic, stat, 然后其余 ---
+
+    # 1. <model> - 不复制 shadowScale/rotationSpeed/walkSpeed/runSpeed
+    new_model = ET.SubElement(new_env, 'model')
+    if kms_model is not None:
+        for k, v in kms_model.attrib.items():
+            if k not in _KMS_MODEL_SKIP:
+                new_model.set(k, v)
+    for k, default in _NPC_OTHER_DEFAULTS['model'].items():
+        if k not in new_model.attrib:
+            if k == 'scale' and 'scale' not in new_model.attrib:
+                new_model.set(k, '1.000000')
+            elif k != 'scale':
+                new_model.set(k, default)
+    # offset 格式统一：逗号后加空格
+    offset_val = new_model.get('offset', '')
+    if offset_val and ', ' not in offset_val:
+        new_model.set('offset', offset_val.replace(',', ', '))
+
+    # 2. <basic> - KMS <environment> 上所有属性都迁移（除了 feature/locale）
+    basic = ET.SubElement(new_env, 'basic')
+    for attr, val in env.attrib.items():
+        if attr not in _NPC_ENV_SKIP:
+            basic.set(attr, val)
+    for attr, default in _NPC_BASIC_DEFAULTS.items():
+        if attr not in basic.attrib:
+            basic.set(attr, default)
+
+    # 3. <stat>
+    stat = env.find('stat')
+    new_stat = ET.SubElement(new_env, 'stat')
+    if stat is not None:
+        for kms_attr, gms_attr in _NPC_KMS_STAT_MAP.items():
+            val = stat.get(kms_attr)
+            if val is not None:
+                new_stat.set(gms_attr, val)
+    for k, default in _NPC_STAT_DEFAULTS.items():
+        if k not in new_stat.attrib:
+            new_stat.set(k, default)
+
+    # 4. 其他子节点
+    for tag, defaults in _NPC_OTHER_DEFAULTS.items():
+        if tag in ('model', 'stat'):
+            continue
+        node = env.find(tag)
+        new_node = ET.SubElement(new_env, tag)
+        if node is not None:
+            for k, v in node.attrib.items():
+                new_node.set(k, v)
+        for k, default in defaults.items():
+            if k not in new_node.attrib:
+                new_node.set(k, default)
+
+    # <speed> 从 KMS <model> 的 rotationSpeed/walkSpeed/runSpeed 映射
+    speed_node = new_env.find('speed')
+    if kms_model is not None and speed_node is not None:
+        rot = kms_model.get('rotationSpeed')
+        walk = kms_model.get('walkSpeed')
+        run = kms_model.get('runSpeed')
+        if rot:
+            speed_node.set('rotation', rot)
+        if walk:
+            speed_node.set('walk', walk)
+        if run:
+            speed_node.set('run', run)
+
+    # <shadow> scale 使用 KMS <model> 的 shadowScale
+    if kms_model is not None:
+        shadow_scale = kms_model.get('shadowScale')
+        shadow_node = new_env.find('shadow')
+        if shadow_scale and shadow_node is not None:
+            shadow_node.set('scale', shadow_scale)
+
+    # 必须有 <crystals />
+    if new_env.find('crystals') is None:
+        ET.SubElement(new_env, 'crystals')
+
+    # <effectdummy> 在 <environment> 外部
+    # KMS 无 effectdummy 时，补 GMS 标准模板
+    effectdummy = env.find('effectdummy')
+    new_effectdummy = ET.Element('effectdummy')
+    if effectdummy is not None:
+        for k, v in effectdummy.attrib.items():
+            new_effectdummy.set(k, v)
+        for child in effectdummy:
+            new_effectdummy.append(child)
+    else:
+        for name in ['Eff_Head', 'Eff_Body', 'Eff_Foot', 'Eff_UI',
+                     'Eff_Damage', 'Eff_Head_World', 'Eff_Body_World', 'Eff_Foot_World']:
+            d = ET.SubElement(new_effectdummy, 'dummy')
+            d.set('name', name)
+
+    return new_env, new_effectdummy
+
+
+def _npc_id_to_gms_path(npc_id, output_base):
+    """将 NPC ID 转换为 GMS 嵌套路径：id -> AA/BB/AAAAAAAA.xml"""
+    sid = str(npc_id).zfill(8)
+    if len(sid) >= 8:
+        return os.path.join(output_base, 'npc', sid[:2], sid[2:4], f'{sid}.xml')
+    else:
+        return os.path.join(output_base, 'npc', sid[:2], sid[2:4], f'{int(sid):08d}.xml')
+
+def process_npcdata_folder(source_dir, output_dir):
+    """处理 npcdata 目录（KMS 合集 -> GMS 独立文件）"""
+    src = os.path.join(source_dir, 'npcdata')
+    if not os.path.exists(src):
+        print('[!] npcdata 目录不存在:', src)
+        return
+    print('\n' + '='*50)
+    print('处理 npcdata (KMS 合集 -> GMS 独立文件)')
+    print('='*50)
+    xml_files = sorted([f for f in os.listdir(src) if f.endswith('.xml')])
+    total = len(xml_files)
+    total_npcs = 0
+    errors = []
+    print(f'找到 {total} 个文件')
+    for fi, fname in enumerate(xml_files, 1):
+        src_file = os.path.join(src, fname)
+        try:
+            tree = ET.parse(src_file)
+            root = tree.getroot()
+        except Exception as e:
+            errors.append(f'{fname}: 解析错误 {e}')
+            continue
+        npcs = root.findall('.//npc')
+        total_npcs += len(npcs)
+        for npc in npcs:
+            npc_id = npc.get('id')
+            if not npc_id:
+                continue
+            new_env, effectdummy = _create_gms_environment(npc)
+            if new_env is None:
+                errors.append(f'{fname}: NPC {npc_id} 缺少 <environment>')
+                continue
+            out_path = _npc_id_to_gms_path(npc_id, output_dir)
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            new_root = ET.Element('ms2')
+            new_root.append(new_env)
+            if effectdummy is not None:
+                new_root.append(effectdummy)
+            new_tree = ET.ElementTree(new_root)
+            ET.indent(new_tree)
+            new_tree.write(out_path, encoding='utf-8', xml_declaration=True)
+        if fi % 10 == 0 or fi == total:
+            pct = fi * 100 // total
+            print(f'\r进度: {fi}/{total} ({pct}%)', end='', flush=True)
+    print()
+    print(f'\n转换完成! 文件: {total}, NPC: {total_npcs}')
+    print(f'成功: {total_npcs - len(errors)}, 错误: {len(errors)}')
 
 if __name__ == '__main__':
     main()

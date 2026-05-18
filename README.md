@@ -34,7 +34,12 @@ Maple2_KC_Convert_to_Gms/
 | string | ✅ 完成 | 直接复制 | 1093个文件 |
 | skilldata | ✅ 完成 | KMS→GMS 结构转换 | 9451技能，9个解析错误 |
 | script | ✅ 完成 | NPC/Quest 大文件→分类文件 | NPC 3268个，Quest 4388个/14文件 |
+| riding | ✅ 完成 | 骑宠主文件+passenger拆分 | 主文件+N/29个passenger独立文件 |
 | additional | ⏸️ 跳过 | - | GMS 无此目录 |
+| quest | ✅ 完成 | 补GMS独有节点和属性 | quest/ 目录，14个分类文件 |
+| pet | ✅ 完成 | 直接复制 | KMS=GMS，105个文件 |
+| object | ✅ 完成 | 直接复制 | KMS多6个新增+nurturing节点 |
+| npcdata | ✅ 完成 | 合集拆分+格式转换 | KMS合集→GMS独立文件，10816个NPC |
 | additionaleffect | ⏸️ 待分析 | - | 6034共同文件全部大小不同 |
 
 ---
@@ -108,6 +113,12 @@ id >= 100000000: 9位 → 前3位作文件夹 → 9位.xml
 | 6 | `<motion>` 属性未迁移 | motionProperty 缺失 | 2026-05-15 |
 | 7 | 模板缺 `allowMapleSurvival` | 技能1对比差异 | 2026-05-15 |
 | 8 | 模板 attack 重复 | 转换前未清空 | 2026-05-15 |
+| 9 | `talkAni` 默认值错误 | `"0"` 应为 `"1"` | 2026-05-18 |
+| 10 | `<model>` 多了不属于它的属性 | `shadowScale/rotationSpeed/walkSpeed/runSpeed` 在 `<model>` 中 | 2026-05-18 |
+| 11 | `<speed>` 使用了默认值 | `rotation="190" walk="120" run="0"` (默认值) | 2026-05-18 |
+| 12 | `<shadow>` scale 值错误 | `scale="250"` (默认值) 应为 KMS `shadowScale` 值 | 2026-05-18 |
+| 13 | 缺失 `<crystals />` 节点 | `</environment>` 前无 `<crystals />` | 2026-05-18 |
+| 14 | `<effectdummy>` 位置错误 | 在 `</environment>` 内部，应在外部 | 2026-05-18 |
 
 ---
 
@@ -159,6 +170,32 @@ GMS 有 1954 个 KMS 没有的技能，其中 1393 个在共同子目录中，27
 4C&G 有 6071 个文件，GMS 有 6090 个，6034 个共同文件**全部大小不同**。
 差异性质未确认（可能是格式差异也可能是数值差异），需抽样对比。
 
+### riding 转换详情
+
+**结构差异**:
+
+| 目录 | KMS | GMS |
+|------|-----|-----|
+| `riding/` 主目录 | N 个骑宠文件，无 00000000.xml | 同上 + **00000000.xml**（默认模板） |
+| `effectdummy/` | 20个 9991xxxx.xml | 同上 |
+| `passenger/` | **不存在**（嵌套在主文件 `<passengers>`） | 29个 5060xxxx/5062xxxx.xml |
+
+**主文件转换**:
+- 读取 KMS `riding/50600208.xml`
+- 移除 `<passengers>` 节点（已移到 passenger/ 独立文件）
+- 复制到 `riding/50600208.xml`
+- 保留所有其他节点（basic/collision/shadow/faceCamera）
+- GMS 额外节点（capsule/stat）来自 GMS 00000000.xml 模板，KMS 没有则不生成
+
+**passenger/ 目录转换**:
+- 从每个 KMS 主文件的 `<passengers>/<passenger>` 提取乘客数据
+- 重命名 `<passenger>` → `<ridepassenger>`
+- 将 `id` 从父级 `<basic>` 提升到 `<ridepassenger>` 上
+- 写入 `riding/passenger/{id}.xml`
+- 29个文件，1:1对应，无遗漏
+
+**00000000.xml 模板**: GMS 专用默认模板，不来自 KMS，直接从 3GMSXml 复制。
+
 ### script 转换详情
 
 **NPC 转换**：
@@ -191,6 +228,39 @@ GMS 有 1954 个 KMS 没有的技能，其中 1393 个在共同子目录中，27
 **KMS独有Quest**：178个任务在GMS中不存在，全部写入world.xml。其中100个在9701xxxx区间（韩服独有内容）。
 
 ---
+---
+
+## npcdata 转换详情
+
+### NPC 数量统计
+
+| 统计项 | 数量 |
+|--------|------|
+| KMS 总文件 | 69 |
+| KMS 总 NPC | 10816 |
+| 输出文件 | 10816 |
+| 生成错误 | 0 |
+
+### KMS vs GMS 结构映射
+
+| KMS | GMS | 处理方式 |
+|-----|-----|----------|
+| `<ms2><npc id="X">` | `<ms2>` | 移除 `<npc>` 包装 |
+| `<environment>` 属性 | `<basic>` 子节点 | 属性迁移到 `<basic>` |
+| `<environment>` 子节点 | `<environment>` 子节点 | 保留并补充GMS独有节点 |
+| `<effectdummy>` | `<effectdummy>` | 保留 |
+
+### GMS 独有子节点（需补充默认值）
+
+`<basic>`, `<speed>`, `<skill>`, `<additionalEffect>`, `<interact>`, `<combat>`, `<assist>`, `<aiInfo>`, `<collision>`, `<corpse>`, `<validBattleCylinder>`, `<dead>`, `<push>`, `<exp>`, `<shadow>`, `<dropiteminfo>`, `<lookattarget>`, `<crystals>`
+
+### NPC ID 路径映射
+
+```
+id=11000001 → npc/11/00/11000001.xml
+id=2040998 → npc/02/04/02040998.xml
+```
+
 
 ## 使用说明
 
@@ -201,7 +271,7 @@ python convert_cg_to_gms.py
 ```
 
 脚本会列出 4C&GXml 下的子目录，输入序号选择要转换的目录。
-skilldata 直接从 2KMSXml/skilldata 读取。
+skilldata 和 riding 数据在 2KMSXml 下（4C&GXml 不含这两个目录），脚本会自动从 2KMSXml 读取。
 
 ### 技能转换流程
 
@@ -214,7 +284,8 @@ skilldata 直接从 2KMSXml/skilldata 读取。
 
 ## 更新日志
 
-- **2026-05-15**: 完成 script 目录转换（NPC 3268个 + Quest 4388个/14文件），修复 skilldata 4个格式Bug
+- **2026-05-18**: 完成 npcdata 目录转换（合集→独立文件+格式转换，10816个NPC）
+- **2026-05-15**: 完成 riding 目录转换（骑宠主文件+passenger/29个独立文件）；完成 script 目录转换（NPC 3268个 + Quest 4388个/14文件），修复 skilldata 4个格式Bug
 - **2026-05-14**: 完成 skilldata 核心转换逻辑，完成 table/string 集成
 - **2026-05-13**: 集成 anikeyinfo 增量更新，分析 skilldata 结构差异
 - **2026-05-11**: 创建项目基础结构，完成 achieve/camera/ui/ugcmap/trigger
