@@ -845,7 +845,7 @@ def main():
 
     choice = input("\n请选择要处理的文件夹编号 (多个用逗号分隔，直接回车选择全部): ").strip()
 
-    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'npcdata']
+    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'musicscore', 'masteryhomemade', 'npcdata']
 
     if not choice:
         selected = [f for f in subfolders if f in supported]
@@ -922,6 +922,10 @@ def main():
             process_direct_copy(source_dir, output_dir, 'pet')
         elif folder == 'object':
             process_direct_copy(source_dir, output_dir, 'object')
+        elif folder == 'musicscore':
+            process_direct_copy(source_dir, output_dir, 'musicscore')
+        elif folder == 'masteryhomemade':
+            process_direct_copy(source_dir, output_dir, 'masteryhomemade')
         elif folder == 'npcdata':
             process_npcdata_folder(source_dir, output_dir)
         else:
