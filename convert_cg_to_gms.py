@@ -824,6 +824,10 @@ def main():
 
     subfolders = find_subfolders(source_dir)
 
+    # itempreset: 源是KMS的itemmodel目录
+    if 'itemmodel' in subfolders and 'itempreset' not in subfolders:
+        subfolders.append('itempreset')
+
     # map目录来自3GMSXml而非4C&G，需要额外检查
     gms_ref = os.path.join(os.path.dirname(source_dir.rstrip(os.sep)), '3GMSXml')
     gms_map_dir = os.path.join(gms_ref, 'map')
@@ -834,34 +838,50 @@ def main():
         print("源目录下没有子文件夹")
         return
 
-    print(f"\n可用文件夹:")
-    for i, folder in enumerate(subfolders, 1):
-        print(f"  {i}. {folder}")
+    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'musicscore', 'masteryhomemade', 'npcdata', 'mapxblock', 'map', 'itempreset', 'itemdata']
 
-    print("\n支持的文件夹: achieve, camera, ui, ugcmap, anikeyinfo, trigger, table, string, skilldata, script, riding, quest, pet, object, npcdata, mapxblock, map")
+    # 目录名映射: KMS目录名 → 脚本处理名
+    folder_alias = {'itemmodel': 'itempreset'}
 
-    if 'anikeyinfo' in subfolders:
-        print("\n注意: 处理 anikeyinfo 需要输出目录已有原始 anikeytext.xml")
+    # 只显示支持的文件夹（映射后检查）
+    display_folders = [f for f in subfolders if folder_alias.get(f, f) in supported]
 
-    if 'skilldata' in subfolders:
+    if not display_folders:
+        print('没有可处理的文件夹')
+        return
+
+    print(f'\n可处理的文件夹:')
+    for i, folder in enumerate(display_folders, 1):
+        alias = folder_alias.get(folder)
+        label = folder + ' -> ' + alias if alias else folder
+        print(f'  {i}. {label}')
+
+    if 'anikeyinfo' in display_folders:
+        print('\n注意: 处理 anikeyinfo 需要输出目录已有原始 anikeytext.xml')
+
+    if 'skilldata' in display_folders or 'itemmodel' in display_folders:
         parent_dir = os.path.dirname(source_dir.rstrip(os.sep))
         tpl = os.path.join(parent_dir, 'skill_template.xml')
-        print(f"\n注意: 处理 skilldata 需要模板文件 skill_template.xml")
-        print(f"  模板路径: {tpl}")
+        print(f'\n注意: 处理 skilldata 需要模板文件 skill_template.xml')
+        print(f'  模板路径: {tpl}')
 
-    choice = input("\n请选择要处理的文件夹编号 (多个用逗号分隔，直接回车选择全部): ").strip()
+    if 'itemdata' in display_folders:
+        parent_dir = os.path.dirname(source_dir.rstrip(os.sep))
+        tpl = os.path.join(parent_dir, 'item_template.xml')
+        print(f'\n注意: 处理 itemdata 需要模板文件 item_template.xml')
+        print(f'  模板路径: {tpl}')
 
-    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'musicscore', 'masteryhomemade', 'npcdata', 'mapxblock', 'map']
+    choice = input('\n请选择要处理的文件夹编号 (多个用逗号分隔，直接回车选择全部): ').strip()
 
     if not choice:
-        selected = [f for f in subfolders if f in supported]
+        selected = [folder_alias.get(f, f) for f in display_folders]
     else:
         try:
             indices = [int(x.strip()) for x in choice.split(',')]
-            selected = [subfolders[i-1] for i in indices]
+            selected = [folder_alias.get(display_folders[i-1], display_folders[i-1]) for i in indices]
         except:
-            print("选择无效，默认选择全部")
-            selected = [f for f in subfolders if f in supported]
+            print('选择无效，默认选择全部')
+            selected = [folder_alias.get(f, f) for f in display_folders]
 
     while True:
         output_dir = input("\n请输入输出目录路径: ").strip().strip('"')
@@ -891,6 +911,8 @@ def main():
     print("  npcdata: KMS合集 -> GMS独立文件")
     print("  mapxblock: KMS全量 + GMS独有")
     print("  map: GMS独有目录直接复制")
+    print("  itempreset: KMS itemmodel -> GMS独立itempreset文件")
+    print("  itemdata: KMS合集 -> GMS独立文件 + option节点转换")
 
     confirm = input("\n确认开始转换? (y/n): ").strip().lower()
     if confirm != 'y':
@@ -940,6 +962,10 @@ def main():
             process_mapxblock_folder(source_dir, output_dir)
         elif folder == 'map':
             process_map_folder(source_dir, output_dir)
+        elif folder == 'itempreset':
+            process_itempreset_folder(source_dir, output_dir)
+        elif folder == 'itemdata':
+            process_itemdata_folder(source_dir, output_dir)
         else:
             print(f"未支持的文件夹: {folder}")
 
@@ -1548,6 +1574,405 @@ def process_map_folder(source_dir, output_dir):
             count += 1
 
     print(f'map 转换完成: 直接复制GMS原版, 共{count}个文件')
+
+
+def _item_id_to_path(item_id):
+    """物品ID -> A/BB/CCCCCCCC.xml 路径"""
+    padded = item_id.zfill(8)
+    d1 = padded[0]
+    d2 = padded[1:3]
+    return os.path.join(d1, d2, padded + '.xml')
+
+
+def _convert_kms_itemmodel_to_gms(im_elem):
+    """将KMS <ItemModel> 转换为GMS itempreset格式的 <ms2> 根节点"""
+    ms2 = ET.Element('ms2')
+
+    # <basic /> 节点
+    basic = ET.SubElement(ms2, 'basic')
+    # 如果KMS customize 有 capAttach=1，加 friendly="1"
+    cust_elem = im_elem.find('customize')
+    if cust_elem is not None and cust_elem.get('capAttach') == '1':
+        basic.set('friendly', '1')
+
+    # <customize> 节点
+    if cust_elem is not None:
+        gms_cust = ET.SubElement(ms2, 'customize')
+        # 属性映射
+        gms_cust.set('colorPalette', cust_elem.get('colorPalette', '0'))
+        gms_cust.set('color', cust_elem.get('color', '0'))
+        gms_cust.set('colordetail', cust_elem.get('colordetail', '0'))
+        gms_cust.set('ch0', cust_elem.get('ch0', '0'))
+        gms_cust.set('ch1', cust_elem.get('ch1', '0'))
+        gms_cust.set('ch2', cust_elem.get('ch2', '0'))
+        gms_cust.set('defaultColorIndex', cust_elem.get('defaultColorIndex', '-1'))
+        if 'colorDye' in cust_elem.attrib:
+            gms_cust.set('colorDye', cust_elem.get('colorDye'))
+
+        # KMS scale -> HR scale, KMS translation -> FD, KMS rotation -> CP
+        hr = ET.SubElement(gms_cust, 'HR')
+        hr.set('scale', cust_elem.get('scale', '0'))
+        hr.set('pony', '0')
+
+        fd = ET.SubElement(gms_cust, 'FD')
+        fd.set('translation', cust_elem.get('translation', '0'))
+        fd.set('rotation', cust_elem.get('rotation', '0'))
+        fd.set('scale', '0')
+
+        cp = ET.SubElement(gms_cust, 'CP')
+        cp.set('xrotation', '0')
+        cp.set('yrotation', '0')
+        cp.set('zrotation', '0')
+        cp.set('scale', '0')
+        cp.set('attach', '0')
+
+        # capTransform -> CP/transform
+        for ct in cust_elem.findall('capTransform'):
+            transform = ET.SubElement(cp, 'transform')
+            # 位置和旋转值转为6位浮点
+            pos = ct.get('position', '')
+            rot = ct.get('rotation', '')
+            if pos:
+                parts = pos.split(',')
+                pos = ', '.join('{0:.6f}'.format(float(p)) for p in parts)
+                transform.set('position', pos)
+            if rot:
+                parts = rot.split(',')
+                rot = ', '.join('{0:.6f}'.format(float(p)) for p in parts)
+                transform.set('rotation', rot)
+            transform.set('scale', '1')
+    else:
+        # 无 customize 时添加空模板
+        gms_cust = ET.SubElement(ms2, 'customize')
+        gms_cust.set('colorPalette', '0')
+        gms_cust.set('color', '0')
+        gms_cust.set('colordetail', '0')
+        gms_cust.set('ch0', '0')
+        gms_cust.set('ch1', '0')
+        gms_cust.set('ch2', '0')
+        gms_cust.set('defaultColorIndex', '-1')
+        hr = ET.SubElement(gms_cust, 'HR')
+        hr.set('scale', '0')
+        hr.set('pony', '0')
+        fd = ET.SubElement(gms_cust, 'FD')
+        fd.set('translation', '0')
+        fd.set('rotation', '0')
+        fd.set('scale', '0')
+        cp = ET.SubElement(gms_cust, 'CP')
+        cp.set('xrotation', '0')
+        cp.set('yrotation', '0')
+        cp.set('zrotation', '0')
+        cp.set('scale', '0')
+        cp.set('attach', '0')
+
+    # <slots> 节点
+    slots_elem = im_elem.find('slots')
+    gms_slots = ET.SubElement(ms2, 'slots')
+    if slots_elem is not None:
+        for slot in slots_elem.findall('slot'):
+            gms_slot = ET.SubElement(gms_slots, 'slot')
+            gms_slot.set('name', slot.get('name', ''))
+            for asset in slot.findall('asset'):
+                gms_asset = ET.SubElement(gms_slot, 'asset')
+                # 复制KMS所有asset属性
+                for k, v in asset.attrib.items():
+                    gms_asset.set(k, v)
+                # 补充GMS独有属性（如果KMS没有）
+                if 'attachnode' not in gms_asset.attrib:
+                    gms_asset.set('attachnode', '')
+                if 'pony' not in gms_asset.attrib:
+                    gms_asset.set('pony', '0')
+                if 'zalign' not in gms_asset.attrib:
+                    gms_asset.set('zalign', '0')
+                if 'earfold' not in gms_asset.attrib:
+                    gms_asset.set('earfold', '0')
+                if 'ani' not in gms_asset.attrib:
+                    gms_asset.set('ani', '0')
+                if 'emotionhide' not in gms_asset.attrib:
+                    gms_asset.set('emotionhide', '0')
+                if 'capscale' not in gms_asset.attrib:
+                    gms_asset.set('capscale', '1')
+                if 'weapon' not in gms_asset.attrib:
+                    gms_asset.set('weapon', '0')
+                if 'gender' not in gms_asset.attrib:
+                    gms_asset.set('gender', '2')
+                if 'placeable' not in gms_asset.attrib:
+                    gms_asset.set('placeable', '0')
+                if 'replace' not in gms_asset.attrib:
+                    gms_asset.set('replace', '0')
+                # physx 子节点
+                physx_elem = asset.find('physx')
+                if physx_elem is not None:
+                    gms_physx = ET.SubElement(gms_asset, 'physx')
+                    for k, v in physx_elem.attrib.items():
+                        gms_physx.set(k, v)
+                    if 'action' not in gms_physx.attrib:
+                        gms_physx.set('action', '')
+                else:
+                    gms_physx = ET.SubElement(gms_asset, 'physx')
+                    gms_physx.set('action', '')
+            for scale in slot.findall('scale'):
+                gms_scale = ET.SubElement(gms_slot, 'scale')
+                # value 格式转换: 0.2,0.4,... -> 0.200000,0.400000,...
+                val = scale.get('value', '')
+                if val:
+                    parts = val.split(',')
+                    val = ','.join('{0:.6f}'.format(float(p)) for p in parts)
+                    gms_scale.set('value', val)
+                else:
+                    gms_scale.set('value', '')
+                gms_scale.set('min', scale.get('min', '0'))
+                gms_scale.set('max', scale.get('max', '1'))
+                gms_scale.set('reverse', scale.get('reverse', '0'))
+            # 每个slot添加 decal
+            ET.SubElement(gms_slot, 'decal')
+    else:
+        # 空 slot
+        gms_slot = ET.SubElement(gms_slots, 'slot')
+        gms_slot.set('name', '')
+        ET.SubElement(gms_slot, 'decal')
+
+    return ms2
+
+
+def process_itempreset_folder(source_dir, output_dir):
+    """将KMS itemmodel合集转换为GMS itempreset独立文件"""
+    kms_dir = os.path.join(source_dir, 'itemmodel')
+    out_dir = os.path.join(output_dir, 'itempreset')
+
+    if not os.path.exists(kms_dir):
+        print('itempreset: KMS itemmodel目录不存在，跳过')
+        return
+
+    # 复制3个模板文件
+    gms_ref = os.path.join(os.path.dirname(source_dir.rstrip(os.sep)), '3GMSXml')
+    gms_preset_dir = os.path.join(gms_ref, 'itempreset')
+    for tpl in ['empty.xml', 'empty_asset.xml', 'petequipment.xml']:
+        src = os.path.join(gms_preset_dir, tpl)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(out_dir, tpl))
+
+    count = 0
+    errors = 0
+
+    for f in sorted(os.listdir(kms_dir)):
+        if not f.endswith('.xml'):
+            continue
+        fpath = os.path.join(kms_dir, f)
+        try:
+            tree = ET.parse(fpath)
+            root = tree.getroot()
+        except ET.ParseError:
+            errors += 1
+            continue
+
+        for im in root.findall('ItemModel'):
+            item_id = im.get('id')
+            if not item_id:
+                errors += 1
+                continue
+            try:
+                gms_ms2 = _convert_kms_itemmodel_to_gms(im)
+                rel_path = _item_id_to_path(item_id)
+                out_path = os.path.join(out_dir, rel_path)
+                os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                tree_out = ET.ElementTree(gms_ms2)
+                ET.indent(tree_out, space='\t')
+                tree_out.write(out_path, encoding='utf-8', xml_declaration=True)
+                count += 1
+            except Exception as e:
+                errors += 1
+                if errors <= 5:
+                    print(f'  Error converting {item_id}: {e}')
+
+    print(f'itempreset 转换完成: {count}个文件, {errors}个错误')
+
+
+#======================================================================
+# itemdata 转换相关（2026-05-19 新增）
+#======================================================================
+
+def _get_item_path(item_id):
+    """根据 item ID 生成 GMS 路径: A/BB/ID.xml"""
+    if len(item_id) < 3:
+        return None
+    a = item_id[0]
+    bb = item_id[1:3]
+    return f"{a}/{bb}/{item_id}.xml"
+
+def _load_gms_item_template(gms_dir, item_id):
+    """加载 GMS item 文件作为模板"""
+    rel_path = _get_item_path(item_id)
+    if not rel_path:
+        return None
+    fpath = os.path.join(gms_dir, 'item', rel_path)
+    if not os.path.exists(fpath):
+        return None
+    try:
+        tree = ET.parse(fpath)
+        return tree.getroot()
+    except:
+        return None
+
+
+
+def _convert_kms_item_to_gms(kms_item, gms_template, item_id):
+    """将 KMS itemdata 的 item 转换为 GMS 格式"""
+    if gms_template is not None:
+        # 深拷贝 GMS 模板
+        gms_root = copy.deepcopy(gms_template)
+    else:
+        # 创建空的 ms2 结构
+        gms_root = ET.Element('ms2')
+        ET.SubElement(gms_root, 'environment')
+    
+    # 获取 environment 节点
+    gms_env = gms_root.find('environment')
+    if gms_env is None:
+        gms_env = ET.SubElement(gms_root, 'environment')
+    
+    # KMS item 的 environment 子节点
+    kms_env = kms_item.find('environment')
+    if kms_env is None:
+        return gms_root
+    
+    # 需要处理的节点名（KMS itemdata 只有这5个）
+    kms_nodes = ['property', 'limit', 'material', 'tool', 'option']
+    
+    # KMS 的 option 节点需要特殊处理：从 environment 内移到 ms2 层级
+    kms_option = None
+    
+    for node_name in kms_nodes:
+        kms_node = kms_env.find(node_name)
+        if kms_node is None:
+            continue
+        
+        if node_name == 'option':
+            # option 需要移到 environment 外面
+            kms_option = kms_node
+            continue
+        
+        # 查找或创建 GMS 对应节点
+        gms_node = gms_env.find(node_name)
+        if gms_node is None:
+            gms_node = ET.SubElement(gms_env, node_name)
+        
+        # 用 KMS 属性覆盖 GMS 属性
+        for key, value in kms_node.attrib.items():
+            gms_node.set(key, value)
+    
+    # 处理 option 节点（移到 environment 外）
+    if kms_option is not None:
+        # 查找或创建 ms2 直接子节点的 option
+        gms_option = gms_root.find('option')
+        if gms_option is None:
+            gms_option = ET.Element('option')
+            # 插入到 environment 之后
+            env_idx = list(gms_root).index(gms_env) if gms_env in list(gms_root) else 0
+            gms_root.insert(env_idx + 1, gms_option)
+        
+        # 属性映射
+        attr_map = {
+            'constantID': 'optionID',
+            'randomID': 'random',
+            'optionLevel': 'optionLevelFactor',
+        }
+        
+        # 复制 KMS 属性到 GMS option
+        for key, value in kms_option.attrib.items():
+            gms_key = attr_map.get(key, key)
+            gms_option.set(gms_key, value)
+        
+        # 补充 GMS 独有属性
+        if 'title' not in gms_option.attrib:
+            gms_option.set('title', item_id)
+        if 'static' not in gms_option.attrib:
+            gms_option.set('static', item_id)
+        if 'constant' not in gms_option.attrib:
+            gms_option.set('constant', item_id)
+    
+    return gms_root
+
+def process_itemdata_folder(source_dir, output_dir):
+    """处理 itemdata 文件夹：KMS 合集 -> GMS 独立文件"""
+    kms_dir = os.path.join(source_dir, 'itemdata')
+    gms_dir = output_dir  # 3GMSXml
+    out_dir = os.path.join(output_dir, 'item')
+    
+    if not os.path.exists(kms_dir):
+        print(f'KMS itemdata 目录不存在: {kms_dir}')
+        return
+    
+    # 读取模板
+    template_path = os.path.join(os.path.dirname(source_dir.rstrip(os.sep)), 'item_template.xml')
+    if not os.path.exists(template_path):
+        print(f'错误: 模板文件不存在: {template_path}')
+        return
+    try:
+        item_template = ET.parse(template_path).getroot()
+        print(f'已加载模板: {template_path}')
+    except Exception as e:
+        print(f'错误: 无法解析模板: {e}')
+        return
+    
+    # 统计
+    total = 0
+    created = 0
+    errors = 0
+    
+    # 遍历 KMS itemdata 文件
+    print('处理 KMS itemdata...')
+    files = [f for f in os.listdir(kms_dir) if f.endswith('.xml')]
+    for i, fname in enumerate(files, 1):
+        if i % 50 == 0:
+            print(f'  处理中: {i}/{len(files)} ({fname})')
+        
+        fpath = os.path.join(kms_dir, fname)
+        try:
+            tree = ET.parse(fpath)
+            root = tree.getroot()
+        except ET.ParseError as e:
+            errors += 1
+            continue
+        
+        # 遍历每个 item
+        for kms_item in root.findall('item'):
+            item_id = kms_item.get('id')
+            if not item_id:
+                continue
+            
+            total += 1
+            
+            # 确定输出路径
+            rel_path = _get_item_path(item_id)
+            if not rel_path:
+                errors += 1
+                continue
+            out_path = os.path.join(out_dir, rel_path)
+            
+            # 使用通用模板
+            gms_template = item_template
+            
+            # 转换
+            try:
+                gms_root = _convert_kms_item_to_gms(kms_item, gms_template, item_id)
+                
+                # 写入文件
+                os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                tree_out = ET.ElementTree(gms_root)
+                ET.indent(tree_out, space='\t')
+                tree_out.write(out_path, encoding='utf-8', xml_declaration=True)
+                
+                created += 1
+            except Exception as e:
+                errors += 1
+                if errors <= 5:
+                    print(f'  Error converting {item_id}: {e}')
+    
+    print(f'itemdata 转换完成:')
+    print(f'  总计: {total}')
+    print(f'  新建: {created}')
+    print(f'  错误: {errors}')
 
 
 if __name__ == '__main__':
