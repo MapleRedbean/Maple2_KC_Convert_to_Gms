@@ -824,6 +824,12 @@ def main():
 
     subfolders = find_subfolders(source_dir)
 
+    # map目录来自3GMSXml而非4C&G，需要额外检查
+    gms_ref = os.path.join(os.path.dirname(source_dir.rstrip(os.sep)), '3GMSXml')
+    gms_map_dir = os.path.join(gms_ref, 'map')
+    if os.path.exists(gms_map_dir) and 'map' not in subfolders:
+        subfolders.append('map')
+
     if not subfolders:
         print("源目录下没有子文件夹")
         return
@@ -832,7 +838,7 @@ def main():
     for i, folder in enumerate(subfolders, 1):
         print(f"  {i}. {folder}")
 
-    print("\n支持的文件夹: achieve, camera, ui, ugcmap, anikeyinfo, trigger, table, string, skilldata, script, riding, quest, pet, object, npcdata")
+    print("\n支持的文件夹: achieve, camera, ui, ugcmap, anikeyinfo, trigger, table, string, skilldata, script, riding, quest, pet, object, npcdata, mapxblock, map")
 
     if 'anikeyinfo' in subfolders:
         print("\n注意: 处理 anikeyinfo 需要输出目录已有原始 anikeytext.xml")
@@ -845,7 +851,7 @@ def main():
 
     choice = input("\n请选择要处理的文件夹编号 (多个用逗号分隔，直接回车选择全部): ").strip()
 
-    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'musicscore', 'masteryhomemade', 'npcdata']
+    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'musicscore', 'masteryhomemade', 'npcdata', 'mapxblock', 'map']
 
     if not choice:
         selected = [f for f in subfolders if f in supported]
@@ -883,6 +889,8 @@ def main():
     print("  pet: 直接复制")
     print("  object: 直接复制")
     print("  npcdata: KMS合集 -> GMS独立文件")
+    print("  mapxblock: KMS全量 + GMS独有")
+    print("  map: GMS独有目录直接复制")
 
     confirm = input("\n确认开始转换? (y/n): ").strip().lower()
     if confirm != 'y':
@@ -928,6 +936,10 @@ def main():
             process_direct_copy(source_dir, output_dir, 'masteryhomemade')
         elif folder == 'npcdata':
             process_npcdata_folder(source_dir, output_dir)
+        elif folder == 'mapxblock':
+            process_mapxblock_folder(source_dir, output_dir)
+        elif folder == 'map':
+            process_map_folder(source_dir, output_dir)
         else:
             print(f"未支持的文件夹: {folder}")
 
@@ -1483,6 +1495,59 @@ def process_quest_folder(source_dir, output_dir):
         print(f'错误: {len(errors)}')
         for e in errors[:5]:
             print(f'  {e}')
+
+
+def process_mapxblock_folder(source_dir, output_dir):
+    """转换 mapxblock 目录：KMS所有文件复制，GMS独有的4个login文件也保留"""
+    kms_dir = os.path.join(source_dir, 'mapxblock')
+    gms_dir = os.path.join(source_dir, '3GMSXml', 'mapxblock')
+    out_dir = os.path.join(output_dir, 'mapxblock')
+
+    if not os.path.exists(kms_dir):
+        print('mapxblock: KMS目录不存在，跳过')
+        return
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    kms_files = set(os.listdir(kms_dir))
+    gms_files = set(os.listdir(gms_dir)) if os.path.exists(gms_dir) else set()
+
+    # KMS全量复制
+    kms_count = 0
+    for f in kms_files:
+        shutil.copy2(os.path.join(kms_dir, f), os.path.join(out_dir, f))
+        kms_count += 1
+
+    # GMS独有的4个login文件也复制
+    gms_only = gms_files - kms_files
+    gms_count = 0
+    for f in gms_only:
+        shutil.copy2(os.path.join(gms_dir, f), os.path.join(out_dir, f))
+        gms_count += 1
+
+    print(f'mapxblock 转换完成: KMS={kms_count}, GMS独有={gms_count}, 总计={kms_count+gms_count}')
+
+
+def process_map_folder(source_dir, output_dir):
+    """map目录是GMS独有的，直接从3GMSXml/map复制"""
+    gms_ref = os.path.join(os.path.dirname(source_dir.rstrip(os.sep)), '3GMSXml')
+    gms_map_dir = os.path.join(gms_ref, 'map')
+    out_dir = os.path.join(output_dir, 'map')
+
+    if not os.path.exists(gms_map_dir):
+        print('map: GMS目录不存在，跳过')
+        return
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    count = 0
+    for f in os.listdir(gms_map_dir):
+        src = os.path.join(gms_map_dir, f)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(out_dir, f))
+            count += 1
+
+    print(f'map 转换完成: 直接复制GMS原版, 共{count}个文件')
 
 
 if __name__ == '__main__':
