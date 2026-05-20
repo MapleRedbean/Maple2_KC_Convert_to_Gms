@@ -4,23 +4,31 @@
 
 ## 项目状态
 
-**已完成 22/25 目录**
+**已完成 26/26 目录（全部完成）**
 
-| 目录 | 策略 | 状态 |
-|------|------|------|
-| achieve, camera, ui, ugcmap, trigger, string, object, pet, emotion, musicscore | 直接复制 | ✅ |
-| table, anikeyinfo, skilldata | 格式转换/增量更新 | ✅ |
-| script | 大文件拆分 | ✅ |
-| riding | 拆分+passenger提取 | ✅ |
-| quest | 添加GMS节点 | ✅ |
-| npcdata | 合集→独立文件 | ✅ |
-| mapxblock | robocopy复制 | ✅ |
-| map | 直接复制(GMS独有) | ✅ |
-| itempreset | itemmodel转换 | ✅ |
-| itemdata | KMS合集→GMS独立文件 | ✅ |
-| masteryhomemade | 直接复制 | ✅ |
+### 按策略分类
 
-**待处理**: effect, exportedugcmap, groundeffect, additionaleffect
+| 策略 | 目录 | 文件数 | 状态 |
+|------|------|--------|------|
+| **直接复制** | achieve, camera, ui, ugcmap, trigger, string, object, pet, emotion, musicscore, groundeffect, masteryhomemade, exportedugcmap, effect | - | ✅ |
+| **增量合并** | skilldata, additionaleffect | 9451 + 6071 | ✅ |
+| **格式转换** | table, anikeyinfo | - | ✅ |
+| **大文件拆分** | script | NPC 3268 + Quest 14 | ✅ |
+| **拆分+提取** | riding | 615 + 39 passenger | ✅ |
+| **添加节点** | quest | 6809 | ✅ |
+| **合集拆分** | npcdata | 10816 | ✅ |
+| **合集拆分** | itemdata | 37617 | ✅ |
+| **目录映射** | itempreset (itemmodel→itempreset) | 6674 | ✅ |
+| **robocopy** | mapxblock | 1780 | ✅ |
+| **GMS独有** | map | 1686 | ✅ |
+
+### KMS 目录说明
+
+KMS 共有 **28 个目录**，其中：
+- **26 个已处理**：上述表格中的目录
+- **2 个跳过**：
+  - `additional` - additionaleffect 的旧版合集格式（5966定义），additionaleffect 已包含更完整数据
+  - `questdata` - quest 的合集版本，quest 目录已处理（6809独立文件）
 
 ## 目录结构
 

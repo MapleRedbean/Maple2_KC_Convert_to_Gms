@@ -729,6 +729,90 @@ def _convert_kms_skill_to_gms(skill_elem, template_tree):
 
     return new_root
 
+def _merge_additional_effect(kms_file, gms_root):
+    """将KMS精简additional effect合并到GMS完整模板"""
+    kms_tree = ET.parse(kms_file)
+    kms_root = kms_tree.getroot()
+    kms_levels = kms_root.findall('level')
+    if not kms_levels:
+        return None
+    kms_lvl = kms_levels[0]
+    gms_levels = gms_root.findall('level')
+    if not gms_levels:
+        return None
+    gms_lvl = gms_levels[0]
+    for child in kms_lvl:
+        tag = child.tag
+        gms_child = gms_lvl.find(tag)
+        if gms_child is None:
+            gms_child = ET.SubElement(gms_lvl, tag)
+        for k, v in child.attrib.items():
+            gms_child.set(k, v)
+    return gms_root
+
+
+def process_additionaleffect(source_dir, output_dir):
+    """处理additionaleffect：以GMS为基础增量合并KMS属性"""
+    source_ae = os.path.join(source_dir, 'additionaleffect')
+    output_ae = os.path.join(output_dir, 'additionaleffect')
+    gms_ae = os.path.join(os.path.dirname(source_dir.rstrip(os.sep)), '3GMSXml', 'additionaleffect')
+
+    if not os.path.exists(source_ae):
+        print(f"错误: 源目录不存在: {source_ae}")
+        return
+
+    # 复制GMS原版作为基础
+    if os.path.exists(gms_ae):
+        import shutil
+        if os.path.exists(output_ae):
+            shutil.rmtree(output_ae)
+        shutil.copytree(gms_ae, output_ae)
+        print(f"已复制GMS原版 {len(os.listdir(output_ae))} 文件作为基础")
+    else:
+        os.makedirs(output_ae, exist_ok=True)
+        print("警告: GMS原版目录不存在，输出将为空")
+
+    xml_files = sorted([f for f in os.listdir(source_ae) if f.endswith('.xml')])
+    total = len(xml_files)
+    updated = 0
+    new_files = 0
+    errors = 0
+
+    print(f"\n找到 {total} 个KMS additionaleffect文件")
+    print("开始增量合并...\n")
+
+    for fi, fname in enumerate(xml_files, 1):
+        source_file = os.path.join(source_ae, fname)
+        output_file = os.path.join(output_ae, fname)
+        try:
+            if os.path.exists(output_file):
+                gms_tree = ET.parse(output_file)
+                gms_root = gms_tree.getroot()
+                result = _merge_additional_effect(source_file, gms_root)
+                if result is not None:
+                    ET.indent(result)
+                    ET.ElementTree(result).write(output_file, encoding='utf-8', xml_declaration=True)
+                    updated += 1
+            else:
+                # KMS独有文件，直接复制
+                import shutil
+                shutil.copy2(source_file, output_file)
+                new_files += 1
+        except Exception as e:
+            print(f"  错误 {fname}: {e}")
+            errors += 1
+
+        if fi % 500 == 0 or fi == total:
+            pct = fi * 100 // total
+            print(f"\r进度: {fi}/{total} ({pct}%)", end='', flush=True)
+
+    print()
+    print(f"\nadditionaleffect 合并完成!")
+    print(f"  已有文件更新: {updated}")
+    print(f"  KMS独有新文件: {new_files}")
+    print(f"  错误: {errors}")
+
+
 def process_skilldata_folder(source_dir, output_dir):
     """处理skilldata文件夹：KMS格式 → GMS格式"""
     import shutil
@@ -838,7 +922,7 @@ def main():
         print("源目录下没有子文件夹")
         return
 
-    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'emotion', 'musicscore', 'masteryhomemade', 'npcdata', 'mapxblock', 'map', 'itempreset', 'itemdata']
+    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'emotion', 'musicscore', 'masteryhomemade', 'npcdata', 'mapxblock', 'map', 'itempreset', 'itemdata', 'groundeffect', 'additionaleffect', 'exportedugcmap', 'effect']
 
     # 目录名映射: KMS目录名 → 脚本处理名
     folder_alias = {'itemmodel': 'itempreset'}
@@ -913,6 +997,7 @@ def main():
     print("  map: GMS独有目录直接复制")
     print("  itempreset: KMS itemmodel -> GMS独立itempreset文件")
     print("  itemdata: KMS合集 -> GMS独立文件 + option节点转换")
+    print("  groundeffect: 直接复制")
 
     confirm = input("\n确认开始转换? (y/n): ").strip().lower()
     if confirm != 'y':
@@ -954,6 +1039,24 @@ def main():
             process_direct_copy(source_dir, output_dir, 'object')
         elif folder == 'emotion':
             process_direct_copy(source_dir, output_dir, 'emotion')
+            # GMS独有的文件补入（KMS没有的）
+            import shutil
+            kms_folder = os.path.join(source_dir, 'emotion')
+            gms_folder = os.path.join(gms_dir, 'emotion')
+            output_folder = os.path.join(output_dir, 'emotion')
+            extra_count = 0
+            for root, dirs, files in os.walk(gms_folder):
+                for f in files:
+                    gms_file = os.path.join(root, f)
+                    rel = os.path.relpath(gms_file, gms_folder)
+                    kms_file = os.path.join(kms_folder, rel)
+                    if not os.path.exists(kms_file):
+                        dest = os.path.join(output_folder, rel)
+                        os.makedirs(os.path.dirname(dest), exist_ok=True)
+                        shutil.copy2(gms_file, dest)
+                        extra_count += 1
+            if extra_count:
+                print(f"  GMS-only files: {extra_count}")
         elif folder == 'musicscore':
             process_direct_copy(source_dir, output_dir, 'musicscore')
         elif folder == 'masteryhomemade':
@@ -968,6 +1071,14 @@ def main():
             process_itempreset_folder(source_dir, output_dir)
         elif folder == 'itemdata':
             process_itemdata_folder(source_dir, output_dir)
+        elif folder == 'groundeffect':
+            process_direct_copy(source_dir, output_dir, 'groundeffect')
+        elif folder == 'additionaleffect':
+            process_additionaleffect(source_dir, output_dir)
+        elif folder == 'exportedugcmap':
+            process_direct_copy(source_dir, output_dir, 'exportedugcmap')
+        elif folder == 'effect':
+            process_direct_copy(source_dir, output_dir, 'effect')
         else:
             print(f"未支持的文件夹: {folder}")
 
