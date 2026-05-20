@@ -838,7 +838,7 @@ def main():
         print("源目录下没有子文件夹")
         return
 
-    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'musicscore', 'masteryhomemade', 'npcdata', 'mapxblock', 'map', 'itempreset', 'itemdata']
+    supported = ['achieve', 'camera', 'ui', 'ugcmap', 'anikeyinfo', 'trigger', 'table', 'string', 'skilldata', 'script', 'riding', 'quest', 'pet', 'object', 'emotion', 'musicscore', 'masteryhomemade', 'npcdata', 'mapxblock', 'map', 'itempreset', 'itemdata']
 
     # 目录名映射: KMS目录名 → 脚本处理名
     folder_alias = {'itemmodel': 'itempreset'}
@@ -952,6 +952,8 @@ def main():
             process_direct_copy(source_dir, output_dir, 'pet')
         elif folder == 'object':
             process_direct_copy(source_dir, output_dir, 'object')
+        elif folder == 'emotion':
+            process_direct_copy(source_dir, output_dir, 'emotion')
         elif folder == 'musicscore':
             process_direct_copy(source_dir, output_dir, 'musicscore')
         elif folder == 'masteryhomemade':
@@ -1837,10 +1839,12 @@ def _convert_kms_item_to_gms(kms_item, gms_template, item_id):
         return gms_root
     
     # 需要处理的节点名（KMS itemdata 只有这5个）
-    kms_nodes = ['property', 'limit', 'material', 'tool', 'option']
+    kms_nodes = ['basic', 'property', 'limit', 'material', 'tool', 'function', 'option']
     
     # KMS 的 option 节点需要特殊处理：从 environment 内移到 ms2 层级
     kms_option = None
+    kms_function = None
+    kms_property = None
     
     for node_name in kms_nodes:
         kms_node = kms_env.find(node_name)
@@ -1852,14 +1856,60 @@ def _convert_kms_item_to_gms(kms_item, gms_template, item_id):
             kms_option = kms_node
             continue
         
+        if node_name == 'function':
+            # function 需要映射 param1 -> parameter
+            kms_function = kms_node
+            continue
+        
+        if node_name == 'property':
+            # property 需要映射 global* 属性
+            kms_property = kms_node
+            continue
+        
         # 查找或创建 GMS 对应节点
         gms_node = gms_env.find(node_name)
         if gms_node is None:
             gms_node = ET.SubElement(gms_env, node_name)
         
         # 用 KMS 属性覆盖 GMS 属性
-        for key, value in kms_node.attrib.items():
-            gms_node.set(key, value)
+        if node_name == 'function':
+            # KMS 用 param1，GMS 用 parameter，需要映射
+            attr_map = {'param1': 'parameter'}
+            for key, value in kms_node.attrib.items():
+                gms_key = attr_map.get(key, key)
+                gms_node.set(gms_key, value)
+        else:
+            for key, value in kms_node.attrib.items():
+                gms_node.set(key, value)
+    
+    # 处理 property 节点（global* 属性映射）
+    if kms_property is not None:
+        gms_property = gms_env.find('property')
+        if gms_property is None:
+            gms_property = ET.SubElement(gms_env, 'property')
+        # 属性映射：KMS global* -> GMS 对应属性
+        attr_map = {
+            'globalRePackingLimitCount': 'rePackingLimitCount',
+            'globalRePackingItemConsumeCount': 'rePackingItemConsumeCount',
+        }
+        for key, value in kms_property.attrib.items():
+            gms_key = attr_map.get(key, key)
+            gms_property.set(gms_key, value)
+        # 显式删除已映射的旧属性（防止残留）
+        for old_key in attr_map:
+            if old_key in gms_property.attrib:
+                del gms_property.attrib[old_key]
+    
+    # 处理 function 节点（param1 -> parameter 映射）
+    if kms_function is not None:
+        gms_function = gms_env.find('function')
+        if gms_function is None:
+            gms_function = ET.SubElement(gms_env, 'function')
+        # 属性映射
+        attr_map = {'param1': 'parameter'}
+        for key, value in kms_function.attrib.items():
+            gms_key = attr_map.get(key, key)
+            gms_function.set(gms_key, value)
     
     # 处理 option 节点（移到 environment 外）
     if kms_option is not None:
