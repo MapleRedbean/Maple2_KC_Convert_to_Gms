@@ -4,7 +4,7 @@
 
 ## 项目状态
 
-**已完成 26/26 目录（全部完成）**
+**已完成 27/27 目录（全部完成）**
 
 ### 按策略分类
 
@@ -20,12 +20,13 @@
 | **合集拆分** | itemdata | 37617 | ✅ |
 | **目录映射** | itempreset (itemmodel→itempreset) | 6674 | ✅ |
 | **robocopy** | mapxblock | 1780 | ✅ |
-| **GMS独有** | map | 1686 | ✅ |
+| **GMS独有** | map, excel | 1686 + 13 | ✅ |
 
 ### KMS 目录说明
 
 KMS 共有 **28 个目录**，其中：
-- **26 个已处理**：上述表格中的目录
+- **26 个已处理**：上述表格中的目录（不含 excel）
+- **1 个 GMS 独有**：`excel` - Excel配置模板目录（GMS独有，KMS无此目录）
 - **2 个跳过**：
   - `additional` - additionaleffect 的旧版合集格式（5966定义），additionaleffect 已包含更完整数据
   - `questdata` - quest 的合集版本，quest 目录已处理（6809独立文件）
@@ -54,6 +55,19 @@ python convert_cg_to_gms.py
 2. 以 GMS 原版（3GMSXml/）为基础模板
 3. 用 KMS 数据增量更新/补充缺失属性
 4. 输出到 5newGMS/
+
+## 转换逻辑详细说明
+
+详细的转换逻辑和实现细节请参阅：
+- **中文版**: [CONVERSION_LOGIC.md](./CONVERSION_LOGIC.md)
+- **English**: [CONVERSION_LOGIC_EN.md](./CONVERSION_LOGIC_EN.md)
+
+包含以下内容：
+- 每个目录的转换策略和具体实现
+- XML 结构差异分析
+- 属性映射规则
+- 关键技术点（子节点顺序约束、global*属性映射、ID路径化等）
+- 文件统计和注意事项
 
 ## 转换策略
 

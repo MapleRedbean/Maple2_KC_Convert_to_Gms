@@ -4,7 +4,7 @@ Convert Korean (KMS) XML data to Global (GMS) format for private server developm
 
 ## Project Status
 
-**Completed 26/26 directories (100%)**
+**Completed 27/27 directories (100%)**
 
 ### By Strategy
 
@@ -20,12 +20,13 @@ Convert Korean (KMS) XML data to Global (GMS) format for private server developm
 | **Collection Split** | itemdata | 37617 | ✅ |
 | **Directory Mapping** | itempreset (itemmodel→itempreset) | 6674 | ✅ |
 | **robocopy** | mapxblock | 1780 | ✅ |
-| **GMS Only** | map | 1686 | ✅ |
+| **GMS Only** | map, excel | 1686 + 13 | ✅ |
 
 ### KMS Directory Notes
 
 KMS has **28 directories** in total:
-- **26 processed**: Listed in the table above
+- **26 processed**: Listed in the table above (excluding excel)
+- **1 GMS-only**: `excel` - Excel configuration template directory (KMS does not have this directory)
 - **2 skipped**:
   - `additional` - Legacy collection format of additionaleffect (5966 definitions), additionaleffect contains more complete data
   - `questdata` - Collection version of quest, quest directory already processed (6809 individual files)
@@ -55,6 +56,19 @@ Follow the prompts to select directories. The script will:
 2. Use GMS original (3GMSXml/) as base template
 3. Incrementally update with KMS data / fill missing attributes
 4. Output to 5newGMS/
+
+## Detailed Conversion Logic
+
+For detailed conversion strategies and implementation, see:
+- **English**: [CONVERSION_LOGIC_EN.md](./CONVERSION_LOGIC_EN.md)
+- **中文版**: [CONVERSION_LOGIC.md](./CONVERSION_LOGIC.md)
+
+These documents include:
+- Conversion strategy and implementation for each directory
+- XML structure difference analysis
+- Attribute mapping rules
+- Key technical points (child node order, global* attribute mapping, ID path conversion, etc.)
+- File statistics and important notes
 
 ## Conversion Strategies
 
